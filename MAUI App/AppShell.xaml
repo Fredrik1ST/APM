@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="APM_Running_App.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:APM_Running_App"
+    Shell.FlyoutBehavior="Flyout"
+    Title="APM_Running_App">
+
+    <Shell.FlyoutBackground>
+        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#696969" Offset="0.1" />
+            <GradientStop Color="#4F4A41" Offset="0.6" />
+            <GradientStop Color="#696969" Offset="1.0" />
+        </LinearGradientBrush>
+    </Shell.FlyoutBackground>
+
+        <FlyoutItem Title="Home" Icon="home.png">
+            <Tab>
+                <ShellContent ContentTemplate="{DataTemplate local:MainPage}" 
+                              Route="HomePage" />
+            </Tab>
+        </FlyoutItem>
+        <FlyoutItem Title="Training" Icon="run.png">
+            <Tab>
+                <ShellContent Title="Steady Pace" 
+                              ContentTemplate="{DataTemplate local:SteadyPacePage}"
+                              Route="SteadyPacePage" />
+
+                <ShellContent Title="User-defined input"
+                              ContentTemplate="{DataTemplate local:UserDefinedPage}"
+                              Route="UserDefinedPage" />
+
+                <ShellContent Title="Pacing Patterns of Elite Runners"
+                              ContentTemplate="{DataTemplate local:PatternElitePage}"
+                              Route="PatternElitePage" />
+
+                <ShellContent Title="Interval"
+                              ContentTemplate="{DataTemplate local:IntervalPage}"
+                              Route="IntervalPage" />
+            </Tab>
+        </FlyoutItem>
+        <FlyoutItem Title="Previous Results" Icon="chart.png">
+
+        <ShellContent Title="Previous Results" ContentTemplate="{DataTemplate local:PreviousResultsPage}" 
+                              Route="PreviousResultsPage"/>
+        <ShellContent Title="Chart" ContentTemplate="{DataTemplate local:ChartResultsPage}" 
+                              Route="ChartResultsPage" Icon="chart.png"/>
+    </FlyoutItem>
+        <FlyoutItem Title="Info" Icon="info.png">
+            <Tab>
+                <ShellContent ContentTemplate="{DataTemplate local:InfoPage}" 
+                              Route="InfoPage" />
+                
+            </Tab>
+        </FlyoutItem>
+        <FlyoutItem Title="Settings" Icon="settings.png">
+            <Tab>
+                <ShellContent ContentTemplate="{DataTemplate local:SettingsPage}" 
+                              Route="SettingsPage"/>
+            </Tab>
+        </FlyoutItem>
+
+
+    <MenuItem Text="Help" IconImageSource="question.png" Command="{Binding HelpCommand}" />
+
+    <Shell.FlyoutFooter>
+        <Grid>
+            <!--<Image Source="" />-->
+        </Grid>
+    </Shell.FlyoutFooter>
+
+</Shell>

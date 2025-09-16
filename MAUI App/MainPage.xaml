@@ -1,0 +1,21 @@
+﻿<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="APM_Running_App.MainPage">
+
+    <ScrollView>
+        <StackLayout Padding="30" Spacing="20">
+
+            <Image Source="runner_draw.png" HeightRequest="200" Aspect="AspectFit" HorizontalOptions="Center" />
+
+            <Label Text="Welcome back!" FontSize="24" FontAttributes="Bold" HorizontalTextAlignment="Center" />
+
+            <Button Text="Quick Start" Clicked="StartRun_Clicked"  TextColor="DarkRed"
+                    CornerRadius="8" HeightRequest="50" HorizontalOptions="FillAndExpand" />
+
+            <Button Text="View Previous Results" Clicked="ViewResults_Clicked"  TextColor="Blue"
+                    CornerRadius="8" HeightRequest="50" HorizontalOptions="FillAndExpand" />
+
+        </StackLayout>
+    </ScrollView>
+
+</ContentPage>

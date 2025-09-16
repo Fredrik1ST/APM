@@ -1,0 +1,70 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="APM_Running_App.SteadyPacePage">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <!-- ScrollView with VerticalStackLayout -->
+            <RowDefinition Height="Auto" />
+            <!-- TabBar -->
+        </Grid.RowDefinitions>
+
+        <!-- ScrollView with VerticalStackLayout -->
+        <ScrollView Grid.Row="0">
+            <VerticalStackLayout Padding="30,40,30,24" Spacing="10">
+                <Label Text="Distance (m)"
+                       Style="{StaticResource Overline}"
+                       SemanticProperties.HeadingLevel="Level4"
+                       SemanticProperties.Description="" />
+                
+                <Entry x:Name="entry1"
+                       Placeholder="Enter Distance (m)" 
+                       TextChanged="OnEntryTextChanged"
+                       Completed="OnEntryCompleted"
+                       Keyboard="Numeric" 
+                       BackgroundColor="Transparent">
+                </Entry>
+                
+                <Label Text="Finish Time (min)"
+                       Style="{StaticResource Overline}"
+                       SemanticProperties.HeadingLevel="Level4"
+                       SemanticProperties.Description="" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Entry  x:Name="entry_time1" Grid.Column="0"  Margin="0,0,60,0"
+                            Placeholder="min"
+                            TextChanged="OnEntryTextChanged"
+                            Completed="OnEntryCompleted"
+                            Keyboard="Numeric"
+                            BackgroundColor="Transparent">
+                    </Entry>
+                    <Label Text=":" VerticalOptions="Center" HorizontalOptions="Center" Grid.Column="0"  Margin="0,0,0,0"/>
+                    <Entry x:Name="entry_time2" Grid.Column="1"  Margin="-50,0,100,0"
+                               Placeholder="sec"
+                               TextChanged="OnEntryTextChanged"
+                               Completed="OnEntryCompleted"
+                               Keyboard="Numeric"
+                               BackgroundColor="Transparent">
+                    </Entry>
+                </Grid>
+
+                <Button x:Name="SteadyPaceBtn"
+                        Text="Start Run" 
+                        SemanticProperties.Hint="Move to traning page"
+                        Clicked="Button_Clicked"
+                        HorizontalOptions="Fill" />        
+
+
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+
+
+</ContentPage>

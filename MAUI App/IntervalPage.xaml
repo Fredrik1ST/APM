@@ -1,0 +1,56 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="APM_Running_App.IntervalPage">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <!-- ScrollView with VerticalStackLayout -->
+            <RowDefinition Height="Auto" />
+            <!-- TabBar -->
+        </Grid.RowDefinitions>
+
+        <ScrollView Grid.Row="0">
+            <StackLayout Orientation="Vertical" Padding="30,40,30,24" Spacing="10">
+                <Label Text="Enter Interval Time (sec) And Rest Time (sec)"
+                    Style="{StaticResource Overline}"
+                    SemanticProperties.HeadingLevel="Level4"
+                    SemanticProperties.Description="" />
+                <StackLayout x:Name="EntriesStackLayout">
+                    <Grid VerticalOptions="CenterAndExpand" Margin="0" RowSpacing="0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <StackLayout Orientation="Horizontal" Grid.Row="0" Spacing="5">
+                            <Label Text="1:" VerticalOptions="Center" Style="{StaticResource Overline}" />
+                            <Entry Placeholder="Enter Interval Time (sec)" x:Name="EntryTag1" Keyboard="Numeric" />
+                        </StackLayout>
+                        <StackLayout Orientation="Horizontal" Grid.Row="1" Spacing="5">
+                            <Label Text="1:" VerticalOptions="Center" Style="{StaticResource Overline}" />
+                            <Entry Placeholder="Enter Rest Time (sec)" x:Name="EntryTag2" Keyboard="Numeric" />
+                        </StackLayout>
+                    </Grid>
+                </StackLayout>
+                <Label Text="" FontSize="Title"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Text="Add Segment" Clicked="Button_Clicked_Add" Grid.Column="0"  Margin="0,0,10,0"/>
+                    <Button Text="Remove Segment" Clicked="Button_Clicked_Remove" Grid.Column="1"  Margin="10,0,0,0"/>
+                </Grid>
+
+                <Button
+                    x:Name="StartBtn"
+                    Text="Start Run" 
+                    SemanticProperties.Hint="Move to traning page"
+                    Clicked="Button_Clicked"
+                    HorizontalOptions="Fill" Grid.Row="1"/>
+            </StackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

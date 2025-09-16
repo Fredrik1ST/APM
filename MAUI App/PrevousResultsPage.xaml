@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="APM_Running_App.PreviousResultsPage">
+    
+    <ScrollView>
+        <VerticalStackLayout
+            Padding="30,0"
+            Spacing="25">
+            <Image
+                Source="dotnet_bot.png"
+                HeightRequest="185"
+                Aspect="AspectFit"
+                SemanticProperties.Description="dot net bot in a race car number eight" />
+            
+
+            <Label
+                Text="ERROR: This page is not finished"
+                Style="{StaticResource Headline}"
+                SemanticProperties.HeadingLevel="Level1" />
+
+            <Label
+                Text="On this page the values and results from the runs should be presented. "
+                Style="{StaticResource Overline}"
+                SemanticProperties.HeadingLevel="Level5"
+                SemanticProperties.Description="Start a new run" />
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

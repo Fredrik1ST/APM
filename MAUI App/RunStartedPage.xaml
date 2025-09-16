@@ -1,0 +1,73 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="APM_Running_App.RunStartedPage">
+    
+    <ScrollView>
+        <VerticalStackLayout
+            Padding="30,0"
+            Spacing="25">
+
+            <Label
+                x:Name ="timeLabel"
+                Text="00:00"
+                Style="{StaticResource Headline}"
+                SemanticProperties.HeadingLevel="Level1" />
+
+            <Label Text="Chosen Finish Distance and Finish Time"
+                Style="{StaticResource Overline}"
+                SemanticProperties.HeadingLevel="Level4"
+                SemanticProperties.Description="" />
+            
+            <StackLayout x:Name="EntriesStackLayout">
+                <Grid VerticalOptions="CenterAndExpand" Margin="0" RowSpacing="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <StackLayout Orientation="Horizontal" Grid.Row="0" Spacing="5">
+                        <Label Text="Distance: " VerticalOptions="Center" Style="{StaticResource Overline}" />
+                        <Entry Placeholder="" x:Name="EntryTag1" IsReadOnly="True"/>
+                    </StackLayout>
+                    
+                    <StackLayout Orientation="Horizontal" Grid.Row="1" Spacing="5">
+                        <Label Text="Time: " VerticalOptions="Center" Style="{StaticResource Overline}" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Entry  x:Name="EntryTag_time1" 
+                                     Grid.Column="0"  
+                                     Margin="0,0,60,0"
+                                     Placeholder="min"
+                                     IsReadOnly="True"
+                                     BackgroundColor="Transparent">
+                            </Entry>
+                            <Label Text=":" VerticalOptions="Center" HorizontalOptions="Center" Grid.Column="0"  Margin="0,0,0,0"/>
+                            <Entry x:Name="EntryTag_time2" 
+                                    Grid.Column="1"  
+                                    Margin="-50,0,100,0" 
+                                    IsReadOnly="True"
+                                    Placeholder="sec"
+                                    BackgroundColor="Transparent">
+                            </Entry>
+                        </Grid>
+                    </StackLayout>
+                </Grid>
+            </StackLayout>
+
+            <Button
+             x:Name="StopBtn"
+             Text="Stop Run" 
+             SemanticProperties.Hint="Move to traning page"
+             Clicked="Button_Clicked"
+             HorizontalOptions="Fill" Grid.Row="1"/>
+
+           
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>

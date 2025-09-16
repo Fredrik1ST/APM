@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+
+<!--Some of this code is from: https://github.com/Dreamescaper/BlazorBindings.Maui/blob/5400178926ecde529db4120066f936f5d67f779e/samples/ControlGallery/Views/Collections/TimeSpanPicker.razor-->
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="APM_Running_App.PatternElitePage">
+
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <!-- ScrollView with VerticalStackLayout -->
+            <RowDefinition Height="Auto" />
+            <!-- TabBar -->
+        </Grid.RowDefinitions>
+
+        <!-- ScrollView with VerticalStackLayout -->
+        <ScrollView Grid.Row="0">
+            <VerticalStackLayout Padding="30,40,30,24" Spacing="10">
+
+                <!--<Label Text="Input"
+                       Style="{StaticResource SubHeadline}"
+                       SemanticProperties.HeadingLevel="Level5"
+                       SemanticProperties.Description="Start a new run" />-->
+                <Label Text="Select a sex"
+                   Style="{StaticResource Overline}"
+                   SemanticProperties.HeadingLevel="Level4"
+                   SemanticProperties.Description="" />
+
+                <Picker x:Name="picker_sex"
+                    Title="Select a sex" TextColor="White" TitleColor="Grey">
+                    <Picker.ItemsSource>
+                        <x:Array Type="{x:Type x:String}">
+                            <x:String>Female</x:String>
+                            <x:String>Male</x:String>
+                        </x:Array>
+                    </Picker.ItemsSource>
+                </Picker>
+                <Label Text="Select a Distance (m)"
+                        Style="{StaticResource Overline}"
+                        SemanticProperties.HeadingLevel="Level4"
+                        SemanticProperties.Description="" />
+                <Picker x:Name="picker_dist"
+                        Title="Select Distance (m)" TextColor="White" TitleColor="Grey">
+                    <Picker.ItemsSource>
+                        <x:Array Type="{x:Type x:Int32}">
+                            <x:Int32>800</x:Int32>
+                            <x:Int32>1500</x:Int32>
+                            <x:Int32>5000</x:Int32>
+                            <x:Int32>10000</x:Int32>
+                        </x:Array>
+                    </Picker.ItemsSource>
+                </Picker>
+
+                <Label Text="Enter Finish Time"
+                    Style="{StaticResource Overline}"
+                    SemanticProperties.HeadingLevel="Level4"
+                    SemanticProperties.Description="" />
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Entry  x:Name="entry_time1" Grid.Column="0"  Margin="0,0,60,0"
+                            Placeholder="min"
+                            TextChanged="OnEntryTextChanged"
+                            Completed="OnEntryCompleted"
+                            Keyboard="Numeric"
+                            BackgroundColor="Transparent">
+                    </Entry>
+                    <Label Text=":" VerticalOptions="Center" HorizontalOptions="Center" Grid.Column="0"  Margin="0,0,0,0"/>
+                    <Entry x:Name="entry_time2" Grid.Column="1"  Margin="-50,0,100,0"
+                               Placeholder="sec"
+                               TextChanged="OnEntryTextChanged"
+                               Completed="OnEntryCompleted"
+                               Keyboard="Numeric"
+                               BackgroundColor="Transparent">
+                    </Entry>
+                </Grid>
+
+                <Button x:Name="SteadyPaceBtn"
+                        Text="Start Run" 
+                        SemanticProperties.Hint="Move to traning page"
+                        Clicked="Button_Clicked"
+                        HorizontalOptions="Fill" />
+
+
+            </VerticalStackLayout>
+        </ScrollView>
+    </Grid>
+</ContentPage>

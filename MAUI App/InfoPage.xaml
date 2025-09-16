@@ -1,0 +1,49 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="APM_Running_App.InfoPage">
+    
+    <ScrollView>
+        <VerticalStackLayout
+            Padding="30,0"
+            Spacing="10">
+            <Label
+                 Text="App info"
+                 Style="{StaticResource Headline}"
+                 SemanticProperties.HeadingLevel="Level1" />
+            <Image
+                Source="runner_draw.png"
+                HeightRequest="185"
+                Aspect="AspectFit"
+                SemanticProperties.Description="dot net bot in a race car number eight" />
+
+
+            <Label
+                Text="History"
+                Style="{StaticResource Overline}"
+                SemanticProperties.HeadingLevel="Level5"
+                SemanticProperties.Description="Start a new run" />
+
+            <Label
+                Text=" The APM mobile app, developed as part of a master project in 2024, 
+                simplifies the connection between the user and the APM. It enables users to interact seamlessly and easily customize their desired running workouts."
+                Style="{StaticResource Textline}"
+                SemanticProperties.HeadingLevel="Level5"
+                SemanticProperties.Description="This app is made for the APM " />
+
+            <Label
+                Text="Version"
+                Style="{StaticResource Overline}"
+                SemanticProperties.HeadingLevel="Level5"
+                SemanticProperties.Description="Start a new run" />
+
+                        <Label
+                Text="v1.1.1"
+                Style="{StaticResource Textline}"
+                SemanticProperties.HeadingLevel="Level5"
+                SemanticProperties.Description="This app is made for the APM " />
+
+        </VerticalStackLayout>
+    </ScrollView>
+
+</ContentPage>
