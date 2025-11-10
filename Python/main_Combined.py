@@ -67,7 +67,7 @@ from lane_keeping.line_detection import line_detection
 
 
 #subprocess.run(["sudo", "service", "zed_x_daemon", "restart"])
-subprocess.run(["~/Documents/kristoffer/enya-Autonomous-Rabbit/gpsd_init.sh"], shell=True)
+subprocess.run(["./gpsd_init.sh"], shell=True)
 
 
 ######################### CAMERA SETTINGS #########################
