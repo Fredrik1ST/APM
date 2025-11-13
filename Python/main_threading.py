@@ -3,6 +3,7 @@
 # One for image capture (front), one for body tracking (back)
 #
 # Main loop can be extended with new functionality as needed
+#
 # -----------------------------------------------------------
 
 import pyzed.sl as sl           # ZED SDK Python wrapper
@@ -18,33 +19,46 @@ lock_front = threading.Lock()       # Thread lock for front camera
 lock_back = threading.Lock()        # Thread lock for back camera                  
 
 ######################### CAMERA PARAMETERS ############################
+show_image = True                   # Show camera images in GL Viewer
 serial_number_front = 42146143      # 2.2mm big lens
 serial_number_back = 40329509       # 4mm small lens
 fps = 15
 resolution = sl.RESOLUTION.SVGA     # 960x600
-show_image = False                  # Show viewer window
+coordinate_units = sl.UNIT.METER    # Default: millimeter
+coordinate_system = sl.COORDINATE_SYSTEM.IMAGE #(0,0) in top left corner. [X, Y, Z] Z forward.
 
+
+######################### SHARED VARIABLES ###########################
 image_front = sl.Mat()
-timestamp_front = sl.Timestamp()   
+timestamp_front = sl.Timestamp()
 image_back = sl.Mat()
 bodies_back = sl.Bodies()
 timestamp_back = sl.Timestamp()
 
-######################### LOG FILE ################################
-# Will show up as /log/YYYYMMDD/HHMMSS.csv after program ends
+######################### DISTANCE CONTROL ########################
+d_min = 2
+d_max = 6
+d_init = (d_max + d_min) / 2
+
+######################### LOG COLUMNS #############################
+# Will show up in /log/YYYYMMDD/HHMMSS.csv after program ends
 ls_timestamp_front = []
 ls_timestamp_back = []
 ls_num_bodies_back = []
+ls_runner_distance = []
 
 
-def run_front_cam(cam_index, serial, fps, resolution):
+def run_front_cam(serial, fps, resolution, coord_units, coord_system):
     """Front camera setup with continuous image capture.
 
     Run on separate thread to avoid locking when grabbing images.
 
     Args:
-        cam_index (int): Index of the camera
         serial (int): Serial number of the camera
+        fps (int): Frames per second
+        resolution (pyzed.sl.RESOLUTION): Camera resolution
+        coord_units (pyzed.sl.UNIT): Coordinate units
+        coord_system (pyzed.sl.COORDINATE_SYSTEM): Coordinate system
     """ 
     global image_front, timestamp_front, stop_signal, show_image
     image = sl.Mat()
@@ -54,6 +68,8 @@ def run_front_cam(cam_index, serial, fps, resolution):
     init_params.set_from_serial_number(serial)
     init_params.camera_resolution = resolution
     init_params.camera_fps = fps
+    init_params.coordinate_units = coord_units
+    init_params.coordinate_system = coord_system
     camera = sl.Camera()
 
     if camera.open(init_params) != sl.ERROR_CODE.SUCCESS:
@@ -82,14 +98,17 @@ def run_front_cam(cam_index, serial, fps, resolution):
     camera.close()
 
 
-def run_back_cam(cam_index, serial, fps, resolution):
+def run_back_cam(serial, fps, resolution, coord_units, coord_system):
     """Back camera setup and continuous image capture + body tracking.
 
     Run on separate thread to avoid locking when grabbing images.
 
     Args:
-        cam_index (int): Index of the camera
         serial (int): Serial number of the camera
+        fps (int): Frames per second
+        resolution (pyzed.sl.RESOLUTION): Camera resolution
+        coord_units (pyzed.sl.UNIT): Coordinate units
+        coord_system (pyzed.sl.COORDINATE_SYSTEM): Coordinate system
     """ 
     global image_back, bodies_back, timestamp_back, stop_signal, show_image
 
@@ -98,6 +117,8 @@ def run_back_cam(cam_index, serial, fps, resolution):
     init_params.set_from_serial_number(serial)
     init_params.camera_resolution = resolution
     init_params.camera_fps = fps
+    init_params.coordinate_units = coord_units
+    init_params.coordinate_system = coord_system
     camera = sl.Camera()
 
     if camera.open(init_params) != sl.ERROR_CODE.SUCCESS:
@@ -107,7 +128,7 @@ def run_back_cam(cam_index, serial, fps, resolution):
     # --- Body Tracking setup ---
     body_params = sl.BodyTrackingParameters()
     body_params.enable_tracking = True
-    body_params.enable_body_fitting = False                              # Optimize joint positions
+    body_params.enable_body_fitting = False                                # Optimize joint positions
     # body_params.body_format = sl.BODY_FORMAT.BODY_18                     # Default basic body model
     body_params.detection_model = sl.BODY_TRACKING_MODEL.HUMAN_BODY_FAST
 
@@ -185,7 +206,6 @@ def main():
     # --- MAIN LOOP ---
     try:
         while True:
-            fpsCounter += 1
 
             # # --- Check for camera updates ---
             with lock_front:
@@ -198,20 +218,34 @@ def main():
                     back_updated = True
                     last_timestamp_back = timestamp_back.get_milliseconds()
 
-        
+
             # --- FRONT CONTROL ---
             if front_updated:
                 front_updated = False
-                #print(f"Front cam updated: {last_timestamp_front} ms")
+
+                # Log front system
                 ls_timestamp_front.append(last_timestamp_front) # Log timestamp
-            
+
 
             # --- BACK CONTROL ---
             if back_updated:
                 back_updated = False
-                #print(f"Back cam updated: {last_timestamp_back} ms - Bodies detected: {len(bodies_back.body_list)}")
-                ls_timestamp_back.append(last_timestamp_back) # Log timestamp
-                ls_num_bodies_back.append(len(bodies_back.body_list)) # Log number of bodies
+
+                # Detect Runner Distance (meters)
+                if len(bodies_back.body_list) > 0:
+                    runner_distance = bodies_back.body_list[0].position[2]    # Assumed to be the first detected person, with distance in meters (Z axis)             
+                    if runner_distance <= 1:
+                        runner_distance = 1
+                else:
+                    runner_distance = (d_min + d_max) / 2 # Assume mid distance if no bodies detected (=cruise control speed)
+
+                # Log back system
+                ls_timestamp_back.append(last_timestamp_back)                   # Log timestamp
+                ls_num_bodies_back.append(len(bodies_back.body_list))           # Log number of bodies
+                ls_runner_distance.append(bodies_back.body_list[0].position[2]) # Log runner distance (DO NOT log runner_distance variable here!)
+                    
+
+            time.sleep(0.0005) # Sleep main thread to avoid loop using 100% CPU due to active polling
 
 
     except KeyboardInterrupt:
