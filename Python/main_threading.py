@@ -169,13 +169,13 @@ def run_back_cam(serial, fps, resolution, coord_units, coord_system):
             camera.retrieve_bodies(bodies, body_runtime_param)
             if show_image:
                 viewer.update_view(image, bodies)
-
             # Update shared variables
             with lock_back:
                 image_back = image.get_data().copy()
                 bodies_back = bodies
                 timestamp_back = camera.get_timestamp(sl.TIME_REFERENCE.IMAGE)
-
+            time.sleep(0.001)
+            
     camera.disable_body_tracking()
     camera.close()
 
