@@ -14,7 +14,7 @@ import time
 import os
 
 ######################### THREADING PARAMETERS #########################
-stop_signal = False                 
+stop_signal = threading.Event()     # Signal to stop threads                 
 lock_front = threading.Lock()       # Thread lock for front camera
 lock_back = threading.Lock()        # Thread lock for back camera                  
 
@@ -86,7 +86,7 @@ def run_front_cam(serial, fps, resolution, coord_units, coord_system):
 
     print(f"Started capture on front camera {serial}")
 
-    while not stop_signal:
+    while not stop_signal.is_set():
         if camera.grab(runtime) == sl.ERROR_CODE.SUCCESS:
             camera.retrieve_image(image, sl.VIEW.LEFT)
             # Update shared variables
@@ -144,7 +144,8 @@ def run_back_cam(serial, fps, resolution, coord_units, coord_system):
     if err != sl.ERROR_CODE.SUCCESS:
         print("Enable Body Tracking : "+repr(err)+". Exit program.")
         camera.close()
-        exit()
+        stop_signal.set()
+        return
 
     body_runtime_param = sl.BodyTrackingRuntimeParameters()
     # For outdoor scene or long range, the confidence should be lowered to avoid missing detections (~20-30)
@@ -163,7 +164,7 @@ def run_back_cam(serial, fps, resolution, coord_units, coord_system):
     
     print(f"Started back camera {serial}")
 
-    while not stop_signal:
+    while not stop_signal.is_set():
         if camera.grab(runtime) == sl.ERROR_CODE.SUCCESS:
             camera.retrieve_image(image, sl.VIEW.LEFT)
             camera.retrieve_bodies(bodies, body_runtime_param)
@@ -174,7 +175,7 @@ def run_back_cam(serial, fps, resolution, coord_units, coord_system):
                 image_back = image.get_data().copy()
                 bodies_back = bodies
                 timestamp_back = camera.get_timestamp(sl.TIME_REFERENCE.IMAGE)
-            time.sleep(0.001)
+        time.sleep(0.001)
             
     camera.disable_body_tracking()
     camera.close()
@@ -198,8 +199,8 @@ def main():
         return
     
     # --- START THREADS ---
-    t0 = threading.Thread(target=run_front_cam, args=(0, serial_number_front, fps, resolution))
-    t1 = threading.Thread(target=run_back_cam, args=(1, serial_number_back, fps, resolution))
+    t0 = threading.Thread(target=run_front_cam, args=(serial_number_front, fps, resolution, coordinate_units, coordinate_system))
+    t1 = threading.Thread(target=run_back_cam, args=(serial_number_back, fps, resolution, coordinate_units, coordinate_system))
     t0.start()
     t1.start()
 
@@ -207,7 +208,7 @@ def main():
     try:
         while True:
 
-            # # --- Check for camera updates ---
+            # --- Check for camera updates ---
             with lock_front:
                 if timestamp_front.get_milliseconds() != last_timestamp_front:
                     front_updated = True
@@ -232,44 +233,47 @@ def main():
                 back_updated = False
 
                 # Detect Runner Distance (meters)
-                if len(bodies_back.body_list) > 0:
-                    runner_distance = bodies_back.body_list[0].position[2]    # Assumed to be the first detected person, with distance in meters (Z axis)             
-                    if runner_distance <= 1:
-                        runner_distance = 1
-                else:
-                    runner_distance = (d_min + d_max) / 2 # Assume mid distance if no bodies detected (=cruise control speed)
+                with lock_back:
+                    num_bodies_back = len(bodies_back.body_list)        
+                    if num_bodies_back > 0:
+                        runner_distance = bodies_back.body_list[0].position[2]    # Assumed to be the first detected person, with distance in meters (Z axis)
+                    else:
+                        runner_distance = -1 # Negative distance indicates no runner detected
+                        num_bodies_back = 0
 
                 # Log back system
-                ls_timestamp_back.append(last_timestamp_back)                   # Log timestamp
-                ls_num_bodies_back.append(len(bodies_back.body_list))           # Log number of bodies
-                ls_runner_distance.append(bodies_back.body_list[0].position[2]) # Log runner distance (DO NOT log runner_distance variable here!)
-                    
+                ls_timestamp_back.append(last_timestamp_back)   # Log timestamp
+                ls_num_bodies_back.append(num_bodies_back)      # Log number of bodies
+                ls_runner_distance.append(runner_distance)      # Log runner distance
 
             time.sleep(0.0005) # Sleep main thread to avoid loop using 100% CPU due to active polling
 
 
     except KeyboardInterrupt:
-        stop_signal = True
+        stop_signal.set()
         print("Stopping...")
 
     t0.join()
     t1.join()
     print("All threads closed.")
 
-# Log data to CSV
-df = pd.DataFrame({
-    "Front Timestamp (ms)": ls_timestamp_front,
-    "Back Timestamp (ms)": ls_timestamp_back,
-    "Number of Bodies (Back)": ls_num_bodies_back
-})
-# Save log in /log/YYYYMMDD/HHMMSS.csv format
-root_dir = "log"
-day_str = time.strftime("%Y%m%d")
-time_str = time.strftime("%H%M%S")
-os.makedirs(os.path.join(root_dir, day_str), exist_ok=True)
-file_name = os.path.join(root_dir, day_str, f"{time_str}.csv")
-df.to_csv(file_name)
-
-
 if __name__ == "__main__":
     main()
+
+    # Log data to CSV
+    df_front = pd.DataFrame({
+        "Timestamp (ms)": ls_timestamp_front
+    })
+    df_back = pd.DataFrame({
+        "Timestamp (ms)": ls_timestamp_back,
+        "Number of Bodies": ls_num_bodies_back,
+        "Runner distance (m)": ls_runner_distance
+    })
+    # Save log in /log/YYYYMMDD/HHMMSS.csv format
+    root_dir = "log"
+    day_str = time.strftime("%Y%m%d")
+    time_str = time.strftime("%H%M%S")
+    os.makedirs(os.path.join(root_dir, day_str), exist_ok=True)
+    df_front.to_csv(os.path.join(root_dir, day_str, f"front_{time_str}.csv"))
+    df_back.to_csv(os.path.join(root_dir, day_str, f"back_{time_str}.csv"))
+    print(f"Logs saved to {os.path.join(root_dir, day_str)}")
