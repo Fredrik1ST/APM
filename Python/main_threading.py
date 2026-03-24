@@ -11,6 +11,7 @@ import ogl_viewer.viewer as gl  # For displaying images
 import pandas as pd
 import threading
 import time
+from datetime import datetime
 import os
 
 ######################### THREADING PARAMETERS #########################
@@ -46,6 +47,7 @@ ls_timestamp_front = []
 ls_timestamp_back = []
 ls_num_bodies_back = []
 ls_runner_distance = []
+ls_cycle_time = []
 
 
 def run_front_cam(serial, fps, resolution, coord_units, coord_system):
@@ -182,6 +184,8 @@ def run_back_cam(serial, fps, resolution, coord_units, coord_system):
 
 
 def main():
+    ct_start = time.perf_counter() # For counting cycle time
+
     """Run front and back cameras for image capture and body tracking
     
     """
@@ -248,6 +252,8 @@ def main():
 
             time.sleep(0.0005) # Sleep main thread to avoid loop using 100% CPU due to active polling
 
+            ls_cycle_time.append((time.perf_counter() - ct_start)*1000) # Log cycle time (ms) for each loop iteration
+
 
     except KeyboardInterrupt:
         stop_signal.set()
@@ -260,15 +266,29 @@ def main():
 if __name__ == "__main__":
     main()
 
-    # Log data to CSV
+
+    # --- Log data to CSV ---
+    # FRONT
     df_front = pd.DataFrame({
         "Timestamp (ms)": ls_timestamp_front
     })
+    df_front['Delta Timestamp (ms)'] = df_front['Timestamp (ms)'].diff() # Avg FPS based on timestamp differences
+    df_front['Avg FPS'] = 1000 / df_front['Delta Timestamp (ms)']
+
+    # BACK
     df_back = pd.DataFrame({
         "Timestamp (ms)": ls_timestamp_back,
         "Number of Bodies": ls_num_bodies_back,
         "Runner distance (m)": ls_runner_distance
     })
+    df_back['Delta Timestamp (ms)'] = df_back['Timestamp (ms)'].diff() # Avg FPS based on timestamp differences
+    df_back['Avg FPS'] = 1000 / df_back['Delta Timestamp (ms)']
+
+    # CYCLE TIME
+    df_cycle_time = pd.DataFrame({
+        "Cycle Time (s)": ls_cycle_time
+    })
+
     # Save log in /log/YYYYMMDD/HHMMSS.csv format
     root_dir = "log"
     day_str = time.strftime("%Y%m%d")
@@ -276,4 +296,5 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(root_dir, day_str), exist_ok=True)
     df_front.to_csv(os.path.join(root_dir, day_str, f"front_{time_str}.csv"))
     df_back.to_csv(os.path.join(root_dir, day_str, f"back_{time_str}.csv"))
+    df_cycle_time.to_csv(os.path.join(root_dir, day_str, f"cycle_time_{time_str}.csv"))
     print(f"Logs saved to {os.path.join(root_dir, day_str)}")
