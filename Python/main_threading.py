@@ -11,7 +11,6 @@ import ogl_viewer.viewer as gl  # For displaying images
 import pandas as pd
 import threading
 import time
-from datetime import datetime
 import os
 
 ######################### THREADING PARAMETERS #########################
@@ -184,13 +183,11 @@ def run_back_cam(serial, fps, resolution, coord_units, coord_system):
 
 
 def main():
-    ct_start = time.perf_counter() # For counting cycle time
 
     """Run front and back cameras for image capture and body tracking
     
     """
     global stop_signal
-    fpsCounter = 0
     last_timestamp_front = 0
     last_timestamp_back = 0
     front_updated = False
@@ -211,6 +208,7 @@ def main():
     # --- MAIN LOOP ---
     try:
         while True:
+            cycle_start = time.perf_counter() # For counting cycle time
 
             # --- Check for camera updates ---
             with lock_front:
@@ -252,7 +250,8 @@ def main():
 
             time.sleep(0.0005) # Sleep main thread to avoid loop using 100% CPU due to active polling
 
-            ls_cycle_time.append((time.perf_counter() - ct_start)*1000) # Log cycle time (ms) for each loop iteration
+            cycle_end = time.perf_counter()
+            ls_cycle_time.append((cycle_end - cycle_start)) # Log cycle time (s) for each loop iteration
 
 
     except KeyboardInterrupt:
@@ -282,7 +281,7 @@ if __name__ == "__main__":
         "Runner distance (m)": ls_runner_distance
     })
     df_back['Delta Timestamp (ms)'] = df_back['Timestamp (ms)'].diff() # Avg FPS based on timestamp differences
-    df_back['Avg FPS'] = 1000 / df_back['Delta Timestamp (ms)']
+    df_back['Avg FPS'] = 1000 / df_back['Delta Timestamp (ms)'].mean()
 
     # CYCLE TIME
     df_cycle_time = pd.DataFrame({
