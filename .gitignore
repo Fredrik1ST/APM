@@ -393,3 +393,9 @@ TestResult.xml
 *.vspscc
 *.vssscc
 *.sln.docstates
+
+# Various folders and files for development and debugging
+legacy/
+log/
+logs/
+*CLAUDE.md

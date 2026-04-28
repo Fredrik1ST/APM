@@ -1,7 +1,7 @@
 # Cameras
 
 [camera.front]
-fps = 15                    
+fps = 30                    
 resolution = "SVGA"         # 960x600 [pixels]
 serial_number = 42146143    # 2.2mm big lens
 

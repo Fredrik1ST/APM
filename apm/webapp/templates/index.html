@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>APM Control</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { margin-bottom: 0.25rem; }
+    .row { display: flex; gap: 0.5rem; align-items: center; margin: 1rem 0; }
+    button { padding: 0.5rem 1rem; font-size: 1rem; cursor: pointer; }
+    #start { background: #2e7d32; color: #fff; border: 0; border-radius: 4px; }
+    #stop  { background: #c62828; color: #fff; border: 0; border-radius: 4px; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #status { padding: 0.25rem 0.5rem; border-radius: 4px; font-weight: 600; }
+    .running { background: #c8e6c9; color: #1b5e20; }
+    .stopped { background: #ffcdd2; color: #b71c1c; }
+    textarea { width: 100%; height: 60vh; font-family: ui-monospace, monospace; font-size: 0.9rem; }
+    #msg { margin-left: 0.5rem; }
+    .ok  { color: #1b5e20; }
+    .err { color: #b71c1c; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>APM Control</h1>
+
+  <div class="row">
+    <button id="start">Start</button>
+    <button id="stop">Stop</button>
+    <span id="status" class="stopped">unknown</span>
+  </div>
+
+  <h2>Config (<code>config/default.toml</code>)</h2>
+  <textarea id="config" spellcheck="false"></textarea>
+  <div class="row">
+    <button id="save">Save config</button>
+    <button id="reload">Reload from disk</button>
+    <span id="msg"></span>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function refreshStatus() {
+  const r = await fetch("/status");
+  const { running } = await r.json();
+  $("status").textContent = running ? "running" : "stopped";
+  $("status").className = running ? "running" : "stopped";
+  $("start").disabled = running;
+  $("stop").disabled = !running;
+}
+
+async function loadConfig() {
+  const r = await fetch("/config");
+  const { text } = await r.json();
+  $("config").value = text;
+  setMsg("loaded", "ok");
+}
+
+async function saveConfig() {
+  const r = await fetch("/config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: $("config").value }),
+  });
+  const data = await r.json();
+  if (data.ok) setMsg("saved", "ok");
+  else setMsg("error: " + data.error, "err");
+}
+
+function setMsg(text, cls) {
+  const el = $("msg");
+  el.textContent = text;
+  el.className = cls;
+  if (cls === "ok") setTimeout(() => { el.textContent = ""; }, 2000);
+}
+
+$("start").onclick = async () => {
+  const r = await fetch("/start", { method: "POST" });
+  if (!r.ok) setMsg((await r.json()).message || "start failed", "err");
+  refreshStatus();
+};
+$("stop").onclick = async () => {
+  const r = await fetch("/stop", { method: "POST" });
+  if (!r.ok) setMsg((await r.json()).message || "stop failed", "err");
+  refreshStatus();
+};
+$("save").onclick = saveConfig;
+$("reload").onclick = loadConfig;
+
+refreshStatus();
+loadConfig();
+setInterval(refreshStatus, 2000);
+</script>
+</body>
+</html>
