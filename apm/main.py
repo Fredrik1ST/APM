@@ -38,7 +38,29 @@ Main control loop:
 
 '''
 
+import logging
+from datetime import datetime
+from pathlib import Path
 from orchestrator import Orchestrator
 
+_LOG_DIR = Path(__file__).resolve().parent.parent / 'logs'
+
+def _setup_logging() -> None:
+    """Write logs to file and console"""
+    _LOG_DIR.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    log_file = _LOG_DIR / f'{timestamp}.log'
+
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s  %(levelname)-8s  %(name)s  %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(),   # keep console output
+        ],
+    )
+    logging.info(f'Logging to {log_file}')
+
 if __name__ == '__main__':
+    _setup_logging()
     Orchestrator().run()

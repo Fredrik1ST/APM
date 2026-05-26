@@ -72,6 +72,11 @@ MODE_LABELS: dict[Mode, str] = {
 _ACTIVE_STATES = {State.STARTING, State.RUNNING, State.RUNNING_PACE,
                   State.RUNNING_DIST, State.RUNNING_CONST, State.STOPPING}
 
+MODE_LOGGERS: dict[Mode, str] = {
+    Mode.ARDUINO_TEST: 'modes.arduino_test',
+    Mode.GNSS_TEST:    'modes.gnss_test',
+}
+
 
 # ---------------------------------------------------------------------------
 # Config editor
@@ -149,6 +154,8 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                 arduino_row   = ui.row().classes('items-center gap-2')
                 front_cam_row = ui.row().classes('items-center gap-2')
                 back_cam_row  = ui.row().classes('items-center gap-2')
+                ui.separator().classes('my-2')
+                mode_log_row  = ui.row().classes('items-start gap-2 w-full')
 
         # --- config editor ------------------------------------------------
         with ui.card().classes('w-full mx-4 mb-4'):
@@ -219,6 +226,16 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
             update_status_row(arduino_row,   'Arduino / Ethernet', orchestrator.arduino_connected, 'arduino_comm')
             update_status_row(front_cam_row, 'Front camera',       orchestrator.front_camera_ok,   'vision.camera.front')
             update_status_row(back_cam_row,  'Back camera',        orchestrator.back_camera_ok,    'vision.camera.back')
+
+            mode_log_row.clear()
+            logger_name = MODE_LOGGERS.get(orchestrator.mode)
+            if logger_name:
+                record = log_handler.latest(logger_name)
+                if record:
+                    with mode_log_row:
+                        ui.icon('terminal', size='sm').classes('text-gray-400 mt-0.5 shrink-0')
+                        color = _LEVEL_COLORS.get(record.levelno, 'text-gray-200')
+                        ui.label(record.getMessage()).classes(f'text-xs font-mono {color}')
 
         ui.timer(1.0, refresh_ui)
 

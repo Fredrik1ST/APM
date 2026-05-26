@@ -164,10 +164,9 @@ class Orchestrator:
             return
         try:
             gnss_test_mode(self.gnss, self._stop_event, self.cfg)
-            self.state = State.FINISHED
-            time.sleep(3)
         finally:
             self.gnss.stop()
+            self._shutdown()
 
 
     def _run_arduino_test(self) -> None:
@@ -177,9 +176,6 @@ class Orchestrator:
             port = self.cfg["arduino"]["socket"]["port"])
         try:
             arduino_test_mode(self.arduino, self._stop_event, self.cfg)
-
-            self.state = State.FINISHED
-            time.sleep(3) # Allow user to see finished state before going back to idle
         finally:
             self.arduino.stop()
             self._shutdown()
