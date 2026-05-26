@@ -32,7 +32,9 @@ def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
     neutral_speed_pwm = cfg["arduino"]["speed_pwm"]["neutral"]
     pwm_factor        = cfg["arduino"]["speed_pwm"]["factor"]
 
-    SPEED_TEST = 1.0  # m/s
+    SPEED_1 = 0.3 # m/s
+    SPEED_2 = 0.6
+    SPEED_3 = 0.9
 
     log.info('Arduino test mode started — waiting for Arduino to connect...')
     if not _wait_for_connection(arduino, stop_event):
@@ -65,14 +67,25 @@ def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
             return
         log.info(f'  Steering {label} ({angle:.0f}°)')
         _run_phase(arduino, stop_event, duration=2.0,
-                   run=False, steer_angle=angle, speed_pwm=neutral_speed_pwm)
+                   run=True, steer_angle=angle, speed_pwm=neutral_speed_pwm)
 
     # Phase 3 — Motor
-    log.warning('--- Phase 3: Motor test — ensure car is elevated or has space! ---')
-    log.info(f'  Spinning at {SPEED_TEST} m/s for 2 s...')
+    log.info('--- Phase 3: Motor test — ensure car is elevated or has space! ---')
+    log.info(f'  Spinning at {SPEED_1} m/s...')
     _run_phase(arduino, stop_event, duration=2.0,
                run=True, steer_angle=angle_neutral,
-               speed_pwm=mps_to_pwm(SPEED_TEST, pwm_factor, neutral_speed_pwm))
+               speed_pwm=mps_to_pwm(SPEED_1, pwm_factor, neutral_speed_pwm))
+    
+    log.info(f'  Spinning at {SPEED_2} m/s...')
+    _run_phase(arduino, stop_event, duration=2.0,
+               run=True, steer_angle=angle_neutral,
+               speed_pwm=mps_to_pwm(SPEED_2, pwm_factor, neutral_speed_pwm))
+
+    log.info(f'  Spinning at {SPEED_3} m/s...')
+    _run_phase(arduino, stop_event, duration=2.0,
+               run=True, steer_angle=angle_neutral,
+               speed_pwm=mps_to_pwm(SPEED_3, pwm_factor, neutral_speed_pwm))
+
     if stop_event.is_set():
         return
 
