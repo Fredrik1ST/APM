@@ -29,6 +29,7 @@ from gnss import GNSSWrapper
 
 # ---- Program modes (different main loops for different functionalities, e.g. debug modes) ----
 from modes.arduino_test import arduino_test_mode
+from modes.gnss_test import gnss_test_mode
 
 
 log = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ class Orchestrator:
         self._run_event  = threading.Event()  # set by request_start()
         self._stop_event = threading.Event()  # set by request_stop()
 
-        self.arduino_ok: bool = False
+        self.arduino_connected: bool = False
         self.front_camera_ok: bool = False
         self.back_camera_ok: bool = False
 
@@ -151,10 +152,23 @@ class Orchestrator:
             case Mode.CAMERA_TEST_BACK:
                 pass # TODO
             case Mode.GNSS_TEST:
-                pass # TODO
+                self._run_gnss_test()
             case Mode.ARDUINO_TEST:
                 self._run_arduino_test()
     
+
+    def _run_gnss_test(self) -> None:
+        """Verify that the GNSS receiver is working + GPSD daemon is running by logging position and speed."""
+        if self.gnss.start() != 0:
+            log.error('GNSS failed to start — aborting test.')
+            return
+        try:
+            gnss_test_mode(self.gnss, self._stop_event, self.cfg)
+            self.state = State.FINISHED
+            time.sleep(3)
+        finally:
+            self.gnss.stop()
+
 
     def _run_arduino_test(self) -> None:
         """Send commands to the Arduino and verify feedback until user stops the test"""

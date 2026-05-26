@@ -40,7 +40,7 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class GNSSSnapshot: # Simple dataclass to hold the most relevant GNSS data for our use case
-    timestamp: sl.Timestamp
+    timestamp: int = 0
     speed: float = 0.0
     lon: float = 0.0
     lat: float = 0.0
@@ -173,7 +173,7 @@ class GNSSWrapper:
                 # Update snapshot for main program
                 with self.snapshot_lock:
                     self.snapshot = GNSSSnapshot(
-                        timestamp = ts,
+                        timestamp = timestamp_microseconds,
                         speed = gpsd_data["speed"] if "speed" in gpsd_data else 0.0,
                         lon = gpsd_data["lon"] if "lon" in gpsd_data else 0.0,
                         lat = gpsd_data["lat"] if "lat" in gpsd_data else 0.0
