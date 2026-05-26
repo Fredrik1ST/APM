@@ -1,9 +1,8 @@
 '''
 NiceGUI web interface for the Autonomous Pacemaker.
 
-Passive UI layer: reads state from and calls methods on the Orchestrator
-instance it receives. It has no knowledge of how to start or manage the
-Orchestrator process — that belongs to the Orchestrator itself.
+Passive UI layer: 
+reads state from and calls methods on the Orchestrator instance it receives.
 
 Started as a daemon thread by Orchestrator.run().
 '''
@@ -18,6 +17,32 @@ import config_handler as config
 from orchestrator import Orchestrator, State, Mode
 
 log = logging.getLogger(__name__)
+
+
+_LEVEL_COLORS = {
+    logging.DEBUG:    'text-gray-400',
+    logging.INFO:     'text-gray-200',
+    logging.WARNING:  'text-amber-400',
+    logging.ERROR:    'text-red-400',
+    logging.CRITICAL: 'text-red-600',
+}
+
+
+class _LastLogHandler(logging.Handler):
+    """Keeps the most recent log record for each logger name."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._records: dict[str, logging.LogRecord] = {}
+        self._lock = threading.Lock()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        with self._lock:
+            self._records[record.name] = record
+
+    def latest(self, name: str) -> logging.LogRecord | None:
+        with self._lock:
+            return self._records.get(name)
 
 
 STATE_COLORS: dict[State, str] = {
@@ -79,7 +104,7 @@ def _build_config_editor() -> tuple[dict, list]:
 # Page
 # ---------------------------------------------------------------------------
 
-def _register_page(orchestrator: Orchestrator) -> None:
+def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> None:
     @ui.page('/')
     def _index() -> None:
         ui.dark_mode().enable()
@@ -106,7 +131,7 @@ def _register_page(orchestrator: Orchestrator) -> None:
                         orchestrator.request_stop()
                     else:
                         orchestrator.mode = mode_select.value
-                        orchestrator.start_run()
+                        orchestrator.request_start()
 
                 start_stop_btn.on_click(toggle_start_stop)
 
@@ -167,12 +192,16 @@ def _register_page(orchestrator: Orchestrator) -> None:
                               color='orange', on_click=reset_defaults)
 
         # --- status helpers -----------------------------------------------
-        def update_status_row(row, label: str, ok: bool) -> None:
+        def update_status_row(row, label: str, ok: bool, logger_name: str) -> None:
             row.clear()
             with row:
                 ui.icon('check_circle' if ok else 'cancel',
                         color='green' if ok else 'red', size='sm')
-                ui.label(label).classes('text-sm')
+                ui.label(label).classes('text-sm font-medium w-40 shrink-0')
+                record = log_handler.latest(logger_name)
+                if record:
+                    color = _LEVEL_COLORS.get(record.levelno, 'text-gray-200')
+                    ui.label(record.getMessage()).classes(f'text-xs font-mono {color} truncate')
 
         # --- periodic refresh ---------------------------------------------
         def refresh_ui() -> None:
@@ -187,9 +216,9 @@ def _register_page(orchestrator: Orchestrator) -> None:
                 start_stop_btn.set_text('Start')
                 start_stop_btn.props('color=green')
 
-            update_status_row(arduino_row,   'Arduino / Ethernet', orchestrator.arduino_connected)
-            update_status_row(front_cam_row, 'Front camera',       orchestrator.front_camera_ok)
-            update_status_row(back_cam_row,  'Back camera',        orchestrator.back_camera_ok)
+            update_status_row(arduino_row,   'Arduino / Ethernet', orchestrator.arduino_connected, 'arduino_comm')
+            update_status_row(front_cam_row, 'Front camera',       orchestrator.front_camera_ok,   'vision.camera.front')
+            update_status_row(back_cam_row,  'Back camera',        orchestrator.back_camera_ok,    'vision.camera.back')
 
         ui.timer(1.0, refresh_ui)
 
@@ -200,7 +229,10 @@ def _register_page(orchestrator: Orchestrator) -> None:
 
 def start(orchestrator: Orchestrator, host: str = '0.0.0.0', port: int = 8080) -> None:
     '''Register the UI page and start NiceGUI on a daemon thread.'''
-    _register_page(orchestrator)
+    log_handler = _LastLogHandler()
+    log_handler.setLevel(logging.DEBUG)
+    logging.getLogger().addHandler(log_handler)
+    _register_page(orchestrator, log_handler)
     thread = threading.Thread(
         target=ui.run,
         kwargs=dict(host=host, port=port, title='APM Control',
