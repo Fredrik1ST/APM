@@ -13,7 +13,7 @@ import shutil
 # Define paths for config files
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "default.toml"
-SETTINGS_PATH = PROJECT_ROOT / "settings.toml"
+SETTINGS_PATH = PROJECT_ROOT / "config" / "settings.toml"
 
 
 def initialize() -> None:
