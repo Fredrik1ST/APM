@@ -41,14 +41,14 @@ import time
 
 log = logging.getLogger(__name__)
 
-MESSAGE_SIZE = 32
+MESSAGE_SIZE = 32 # bytes
 _COMMANDS_FORMAT = '<4?12xIff4x'
 _FEEDBACK_FORMAT = '<4?12xIfff'
 
 
 def _now_us():
     """Microseconds since epoch."""
-    return int(time.time() * 1e6)
+    return int(time.time_ns() / 1000)
 
 
 def blink(period=2, duty_cycle = 2, offset = 0):
@@ -65,6 +65,17 @@ def blink(period=2, duty_cycle = 2, offset = 0):
         period = 0.5 # Nuh-uh! 
 
     return (t % period) < (period * duty_cycle)
+
+
+def mps_to_pwm(mps = 0.0, factor=20.23, offset_pwm=1540):
+
+    """Convert speed in m/s to PWM signal for the ESC.
+    Args:
+        mps: Desired speed in meters per second.
+        factor: Conversion factor from m/s to PWM microseconds. Found by linear regression of measured speed vs output.
+        offset_pwm: The PWM value corresponding to 0 m/s (neutral point). Depends on ESC calibration.
+    """
+    return (mps * factor) + offset_pwm
 
 
 class MessageCommands:
@@ -139,26 +150,32 @@ class ArduinoWrapper:
     latest commands and receives feedback, automatically re-accepting if the client disconnects.
     '''
 
-    def __init__(self, host='192.168.56.1', port=49152, refresh_rate=50.0):
-        self.host = host
-        self.port = port
-        self.refresh_rate = refresh_rate
+    def __init__(self):
+        self.host: str | None = None
+        self.port: int | None = None
+        self.refresh_rate: float = 0.0
         self.server_socket = None
         self.client_socket = None
         self._SOCKET_TIMEOUT = 1.0
         self.client_address = None
         self.is_connected = False
         self._running = False
-        self.msg_to_arduino = MessageCommands()
-        self.msg_from_arduino = None
+        self.msg_commands = MessageCommands()
+        self.msg_feedback = MessageFeedback()
         self._thread = None
-        self._send_lock = threading.Lock()  # Guards self.msg_to_arduino
-        self._recv_lock = threading.Lock()  # Guards self.msg_from_arduino
+        self._send_lock = threading.Lock()  # Guards self.msg_commands
+        self._recv_lock = threading.Lock()  # Guards self.msg_feedback
 
 
-    def start(self):
+    def start(self, host='192.168.56.1', port=49152, refresh_rate=50.0,
+              ):
         """Start the server socket and background thread for continuous communication. Returns True on success."""
         try:
+            # Read config
+            self.host = host
+            self.port = port
+            self.refresh_rate = refresh_rate
+
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.server_socket.bind((self.host, self.port))
@@ -220,8 +237,8 @@ class ArduinoWrapper:
     def _send_commands(self):
         """Send the latest commands. Returns False on socket failure."""
         with self._send_lock:
-            self.msg_to_arduino.timestamp = _now_us()
-            data = self.msg_to_arduino.packed
+            self.msg_commands.timestamp = _now_us()
+            data = self.msg_commands.packed
         try:
             self.client_socket.sendall(data)
             log.debug(f'Bytes sent to {self.client_address}: {data.hex()}')
@@ -242,7 +259,7 @@ class ArduinoWrapper:
             log.error(f'Error unpacking feedback: {e}')
             return False
         with self._recv_lock:
-            self.msg_from_arduino = msg
+            self.msg_feedback = msg
         log.debug(f'Bytes received from {self.client_address}: {data.hex()}')
         return True
 
@@ -302,11 +319,12 @@ class ArduinoWrapper:
     def write_msg(self, msg: MessageCommands):
         """Thread safe helper to set the commands sent to the Arduino."""
         with self._send_lock:
-            self.msg_to_arduino = msg
-            self.msg_to_arduino.message_nr += 1
+            self.msg_commands = msg
+            self.msg_commands.message_nr += 1
+            return self.msg_commands
 
 
     def read_msg(self):
         """Thread safe helper to read the latest feedback from the Arduino (or None)."""
         with self._recv_lock:
-            return self.msg_from_arduino
+            return self.msg_feedback

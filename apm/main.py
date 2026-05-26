@@ -23,7 +23,7 @@ Main control loop:
     1. Wait for start signal from user (e.g. via button press or local web app)
        Allow user to configure parameters during this phase.
 
-    2. Initialize hardware and software components
+    2. Initialize hardware and software components needed for the selected mode
 
     3. Run main control loop:
         a. Capture images from front and back cameras (free-running camera threads)
@@ -34,6 +34,11 @@ Main control loop:
         f. Maintain distance if lagging behind until runner is back within pace profile
 
     4. Stop when user sends stop signal or if an error occurs
-       If stopped due to error, wait for user to reset before 
+       If stopped due to error, wait for user to reset 
 
 '''
+
+from orchestrator import Orchestrator
+
+if __name__ == '__main__':
+    Orchestrator().run()

@@ -3,7 +3,7 @@ Modified version of Stereolabs' GNSS reader example:
 https://github.com/stereolabs/zed-sdk/tree/master/global%20localization/live/python/gnss_reader
 
 Changes:
-    - Refactored into a "handler" class with a start/stop interface for the main program.
+    - Refactored into a "wrapper" class with a start/stop interface for the main program.
     - Fixed thread handling and shutdown to prevent hanging threads.
     - Added thread-safe snapshot function to read the most recent GNSS data.
     - Added existence checks to keys in TPV messages to prevent silent crashes if a field is missing.
@@ -46,7 +46,7 @@ class GNSSSnapshot: # Simple dataclass to hold the most relevant GNSS data for o
     lat: float = 0.0
 
 
-class GNSSHandler:
+class GNSSWrapper:
     def __init__(self):
         self._stop_event = threading.Event()
         self.new_data = False
@@ -85,9 +85,6 @@ class GNSSHandler:
             self.is_initialized = True
         return 0
 
-    def start(self, measurement_rate_hz: int = 10):
-        '''Helper function to start GNSS handler from main program'''
-        initialize(self, measurement_rate_hz)
 
     def set_measurement_rate(self, rate_hz: int = 10):
         """Set measurement rate of the ZED-F9P GNSS module. Requires ubxtool to be installed. Max 20 Hz with RTK, """

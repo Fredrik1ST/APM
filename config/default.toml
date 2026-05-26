@@ -11,6 +11,14 @@ detection_confidence = 40
 detection_model = "HUMAN_BODY_FAST"
 show_image = false
 
+[camera.front.lane_keeping]
+cut_top = 0.571              # fraction of image height to crop (4/7)
+angle_threshold = 50         # [degrees]
+angle_setpoint = 90          # starting angle [deg] (0 = left, 90 = straight, 180 = right)
+position_setpoint = 363      # pixels
+set_width = 640              # pixels
+show_lines = false
+
 [camera.back]
 fps = 15
 resolution = "SVGA"         # 960x600 [pixels]
@@ -35,14 +43,6 @@ curve_duration = 7.0          # [seconds]
 [distance_control]
 d_min = 2.0                  # [meters]
 d_max = 6.0                  # [meters]
-
-[lane_keeping]
-cut_top = 0.571              # fraction of image height to crop (4/7)
-angle_threshold = 50         # [degrees]
-angle_setpoint = 90          # starting angle [deg] (0 = left, 90 = straight, 180 = right)
-position_setpoint = 363      # pixels
-set_width = 640              # pixels
-show_lines = false
 
 
 # PID
@@ -78,8 +78,17 @@ baud_rate = 115200
 speed_threshold = 0.07       # m/s — minimum speed to count distance
 
 
-# Arduino ethernet socket
+# Arduino (TCP socket and PWM values)
 
-[socket]
+[arduino.socket]
 host = "192.168.56.1"
 port = 49152
+
+[arduino.steer_angle]
+neutral = 90
+max_right = 45 # Max
+max_left = 135 # Max
+
+[arduino.speed_pwm]
+neutral = 1540
+factor = 20.23 # Linear model to convert desired speed (m/s) to PWM (microsecond pulse width)
