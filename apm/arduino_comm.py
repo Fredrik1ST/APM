@@ -51,7 +51,7 @@ def _now_us():
     return int(time.time_ns() / 1000)
 
 
-def blink(period=2, duty_cycle = 2, offset = 0):
+def blink(period=2, duty_cycle=0.5, offset = 0):
     """Blinking function that flips between returning True and False based on parameters. Can be used for e.g. LEDs.
 
     Args:
@@ -238,6 +238,7 @@ class ArduinoWrapper:
         """Send the latest commands. Returns False on socket failure."""
         with self._send_lock:
             self.msg_commands.timestamp = _now_us()
+            self.msg_commands.message_nr += 1
             data = self.msg_commands.packed
         try:
             self.client_socket.sendall(data)
@@ -320,7 +321,6 @@ class ArduinoWrapper:
         """Thread safe helper to set the commands sent to the Arduino."""
         with self._send_lock:
             self.msg_commands = msg
-            self.msg_commands.message_nr += 1
             return self.msg_commands
 
 
