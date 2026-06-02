@@ -27,7 +27,7 @@ Message formats:
 Notes:
 
     - Runs a background thread that continuously sends commands and receives feedback.
-      Simply create an instance of ArduinoWrapper and call start() to begin. Call stop() to shut down.
+      Simply create an instance of ArduinoDriver and call start() to begin. Call stop() to shut down.
 
     - Use get_msg() and write_msg() to read/write messages from the main program in a thread-safe way.
 
@@ -143,7 +143,7 @@ class MessageFeedback:
         return msg
 
 
-class ArduinoWrapper:
+class ArduinoDriver:
     '''
     A simple TCP server for interfacing with an Arduino via Ethernet.
     Only one client can connect at a time. Runs a background thread that continuously sends the
@@ -299,6 +299,11 @@ class ArduinoWrapper:
 
     def stop(self):
         """Stop the server and close all sockets."""
+        
+        # Send an "empty" command to force stop ASAP
+        self.msg_commands = MessageCommands() 
+        self._send_commands()
+
         self._running = False # Signals the background thread to stop
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=self._SOCKET_TIMEOUT + 1.0)

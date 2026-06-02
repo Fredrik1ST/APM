@@ -3,7 +3,7 @@ Modified version of Stereolabs' GNSS reader example:
 https://github.com/stereolabs/zed-sdk/tree/master/global%20localization/live/python/gnss_reader
 
 Changes:
-    - Refactored into a "wrapper" class with a start/stop interface for the main program.
+    - Refactored into a "Driver" class with a start/stop interface for the main program.
     - Fixed thread handling and shutdown to prevent hanging threads.
     - Added thread-safe snapshot function to read the most recent GNSS data.
     - Added existence checks to keys in TPV messages to prevent silent crashes if a field is missing.
@@ -46,7 +46,7 @@ class GNSSSnapshot: # Simple dataclass to hold the most relevant GNSS data for o
     lat: float = 0.0
 
 
-class GNSSWrapper:
+class GNSSDriver:
     def __init__(self):
         self._stop_event = threading.Event()
         self.new_data = False

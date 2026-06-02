@@ -16,11 +16,11 @@ import logging
 import threading
 
 import tomlkit
-from arduino_comm import ArduinoWrapper, MessageCommands, blink, mps_to_pwm
+from apm.drivers.arduino import ArduinoWrapper, MessageCommands, blink, mps_to_pwm
 
 log = logging.getLogger(__name__)
 
-_TICK = 0.05        # Main loop interval [s] — 20 Hz
+_TICK = 0.05        # Main loop interval [s] - 20 Hz
 _LOG_INTERVAL = 1.0 # How often to print feedback during a phase [s]
 
 
@@ -36,7 +36,7 @@ def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
     SPEED_2 = 0.6
     SPEED_3 = 0.9
 
-    log.info('Arduino test mode started — waiting for Arduino to connect...')
+    log.info('Arduino test mode started - waiting for Arduino to connect...')
     if not _wait_for_connection(arduino, stop_event):
         return
 
@@ -47,30 +47,33 @@ def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
         f'speed_limit={fb.pwm_speed_limit:.0f}'
     )
 
-    # Phase 1 — LED blink
+
+    # Phase 1 - LED blink
     log.info('--- Phase 1: LED test (3 s) ---')
+    if stop_event.is_set():
+        return
     _run_phase(arduino, stop_event, duration=3.0,
                run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm,
                blink_leds=True)
+
+
+    # Phase 2 - Steering
+    log.info('--- Phase 2: Steering test ---')
     if stop_event.is_set():
         return
-
-    # Phase 2 — Steering
-    log.info('--- Phase 2: Steering test ---')
     for label, angle in [
         ('right',   angle_right),
         ('neutral', angle_neutral),
         ('left',    angle_left),
         ('neutral', angle_neutral),
     ]:
-        if stop_event.is_set():
-            return
         log.info(f'  Steering {label} ({angle:.0f}°)')
         _run_phase(arduino, stop_event, duration=2.0,
                    run=True, steer_angle=angle, speed_pwm=neutral_speed_pwm)
 
-    # Phase 3 — Motor
-    log.info('--- Phase 3: Motor test — ensure car is elevated or has space! ---')
+
+    # Phase 3 - Motor
+    log.info('--- Phase 3: Motor test - ensure car is elevated or has space! ---')
     log.info(f'  Spinning at {SPEED_1} m/s...')
     _run_phase(arduino, stop_event, duration=2.0,
                run=True, steer_angle=angle_neutral,
@@ -89,7 +92,17 @@ def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
     if stop_event.is_set():
         return
 
-    log.info('  Stopping motor...')
+
+    # Phase 4 - Brake test
+    log.info('--- Phase 4: Brake test ---')
+    _run_phase(arduino, stop_event, duration=4.0,
+               run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm, brake=blink(period=2))
+
+    if stop_event.is_set():
+        return
+
+
+    log.info('Stopping motor...')
     _run_phase(arduino, stop_event, duration=1.0,
                run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm)
 
@@ -116,7 +129,7 @@ def _wait_for_connection(arduino: ArduinoWrapper, stop_event: threading.Event,
 
 def _run_phase(arduino: ArduinoWrapper, stop_event: threading.Event,
                duration: float, run: bool, steer_angle: float,
-               speed_pwm: float, blink_leds: bool = False) -> None:
+               speed_pwm: float, blink_leds: bool = False, brake: bool = False) -> None:
     """Send a fixed command for X seconds, logging feedback once per second."""
     deadline = time.monotonic() + duration
     last_log  = 0.0

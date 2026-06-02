@@ -21,10 +21,10 @@ import threading
 from enum import IntEnum
 import config_handler as config
 
-# ---- Wrappers: Responsible for interfacing with asynchronous data sources (cameras, GNSS, Arduino) ----
-from arduino_comm import ArduinoWrapper, blink
-from gnss import GNSSWrapper
-# From the other modules, import their respective wrappers
+# ---- Drivers: Responsible for interfacing with asynchronous data sources (cameras, GNSS, Arduino) ----
+from apm.drivers.arduino import ArduinoDriver, blink
+from apm.drivers.gnss import GNSSDriver
+# From the other modules, import their respective drivers
 
 
 # ---- Program modes (different main loops for different functionalities, e.g. debug modes) ----
@@ -67,11 +67,11 @@ class Orchestrator:
         self.state = State.IDLE
         self.mode = Mode.NONE
 
-        # Wrappers for hardware components - Handle communication, data retrieval and processing in separate threads
-        self.arduino = ArduinoWrapper()
-        self.gnss = GNSSWrapper()
-        #self.front_camera = CameraWrapper()
-        #self.back_camera = CameraWrapper()
+        # Drivers for hardware components - Handle communication, data retrieval and processing in separate threads
+        self.arduino = ArduinoDriver()
+        self.gnss = GNSSDriver()
+        #self.front_camera = CameraDriver()
+        #self.back_camera = CameraDriver()
 
         # Signals and status to/from user interface (e.g. web app)
         self._run_event  = threading.Event()  # set by request_start()
@@ -97,6 +97,14 @@ class Orchestrator:
         '''Signal the orchestrator to stop the current run gracefully.'''
         self._stop_event.set()
 
+    def force_start(self, mode: Mode) -> None:
+        '''Force start a specific mode, useful for testing without the web UI.'''
+        if self.state != State.IDLE:
+            log.warning('Cannot force start while not in IDLE state.')
+            return
+        self.mode = mode
+        self._stop_event.clear()
+        self._run_event.set()
 
     # -------------------------------------------------------------------------
     # Main entry point
@@ -128,7 +136,7 @@ class Orchestrator:
 
     # -------------------------------------------------------------------------
     # Program modes - Start / stop routines
-    # For each mode, start necessary wrappers and enter the main loop for that mode (logic from /modes)
+    # For each mode, start necessary drivers and enter the main loop for that mode (logic from /modes)
     # -------------------------------------------------------------------------
 
     def _do_run(self) -> None:

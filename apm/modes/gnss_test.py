@@ -9,7 +9,7 @@ import threading
 import logging
 
 import tomlkit
-from gnss import GNSSWrapper
+from apm.drivers.gnss import GNSSWrapper
 
 log = logging.getLogger(__name__)
 
@@ -22,11 +22,16 @@ def gnss_test_mode(gnss: GNSSWrapper, stop_event: threading.Event,
 
     log.info('GNSS fix acquired. Logging position and speed. Press Stop to exit.')
 
-    last_log = 0.0
+    last_log_time = 0.0
+    max_speed = 0.0
+    max_lon = 0.0
+    min_lon = 0.0
+    max_lat = 0.0
+    min_lat = 0.0
 
     while not stop_event.is_set():
         now = time.monotonic()
-        if now - last_log >= _LOG_INTERVAL:
+        if now - last_log_time >= _LOG_INTERVAL:
             snap = gnss.get_snapshot()
             if snap is None:
                 log.warning('No GNSS data yet.')
@@ -37,7 +42,19 @@ def gnss_test_mode(gnss: GNSSWrapper, stop_event: threading.Event,
                     f'speed={snap.speed:.2f} m/s  '
                     f'{"(moving)" if moving else "(stationary)"}'
                 )
-            last_log = now
+
+                # Track the max values observed during the test, useful for detecting outliers at rest
+                max_speed = max(max_speed, snap.speed)
+                max_lon   = max(max_lon, snap.lon)
+                min_lon   = min(min_lon, snap.lon)
+                max_lat   = max(max_lat, snap.lat)
+                min_lat   = min(min_lat, snap.lat)
+
+            last_log_time = now
         stop_event.wait(0.1)
 
+    
+    log.info(f'Max speed during test: {max_speed:.2f} m/s')
+    log.info(f'Max longitude difference during test: {max_lon - min_lon:.7f}°')
+    log.info(f'Max latitude difference during test: {max_lat - min_lat:.7f}°')
     log.info('GNSS test complete.')
