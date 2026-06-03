@@ -81,7 +81,7 @@ def mps_to_pwm(mps = 0.0, factor=20.23, offset_pwm=1540):
 class MessageCommands:
     """Formatted message of commands sent from ZED Box to Arduino"""
     def __init__(self):
-        self.timestamp = 0.0  # Internal - Microseconds since epoch
+        self.timestamp = 0.0  # Internal - Microseconds since epoch (UTC)
         self.run = False
         self.emergency_brake = False
         self.green_led = False
@@ -105,7 +105,7 @@ class MessageCommands:
 class MessageFeedback:
     """Formatted message of feedback sent from Arduino to ZED Box"""
     def __init__(self):
-        self.timestamp = 0.0  # Internal - Microseconds since epoch
+        self.timestamp = 0.0  # Internal - Microseconds since epoch (UTC)
         self.running = False
         self.emergency_brake = False
         self.green_led = False
@@ -132,14 +132,13 @@ class MessageFeedback:
         """Parse 32 bytes received from the Arduino into a MessageFeedback object."""
         msg = cls()
         (msg.running,
-         msg.emergency_brake,
-         msg.green_led,
-         msg.red_led,
-         msg.message_nr,
-         msg.esc_min_pwm,
-         msg.esc_max_pwm,
-         msg.pwm_speed_limit) = struct.unpack(_FEEDBACK_FORMAT, data)
-        msg.timestamp = _now_us()
+        msg.emergency_brake,
+        msg.green_led,
+        msg.red_led,
+        msg.message_nr,
+        msg.esc_min_pwm,
+        msg.esc_max_pwm,
+        msg.pwm_speed_limit) = struct.unpack(_FEEDBACK_FORMAT, data)
         return msg
 
 
@@ -238,6 +237,7 @@ class ArduinoDriver:
         """Send the latest commands. Returns False on socket failure."""
         with self._send_lock:
             self.msg_commands.timestamp = _now_us()
+            self.msg_commands.sent_at = time.monotonic()
             self.msg_commands.message_nr += 1
             data = self.msg_commands.packed
         try:
@@ -261,7 +261,9 @@ class ArduinoDriver:
             return False
         with self._recv_lock:
             self.msg_feedback = msg
-        log.debug(f'Bytes received from {self.client_address}: {data.hex()}')
+            #
+        #log.debug(f'Bytes received from {self.client_address}: {data.hex()}')
+        log.debug(f'Feedback: Run={msg.running:i} | Brake={msg.emergency_brake:i} | Green={msg.green_led:i} | Red={msg.red_led:i}, MsgNr={msg.message_nr}, MinPwm={msg.esc_min_pwm:.0f}, MaxPwm={msg.esc_max_pwm:.0f}, LimitPwm={msg.pwm_speed_limit:.2f}')
         return True
 
 

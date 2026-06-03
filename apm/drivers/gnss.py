@@ -31,7 +31,7 @@ import time
 import threading
 import pyzed.sl as sl
 from gpsdclient import GPSDClient
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import subprocess
 import logging
 
@@ -44,6 +44,7 @@ class GNSSSnapshot: # Simple dataclass to hold the most relevant GNSS data for o
     speed: float = 0.0
     lon: float = 0.0
     lat: float = 0.0
+    received_at: float = field(default_factory=time.monotonic)  # Monotonic clock at object creation time (seconds)
 
 
 class GNSSDriver:
@@ -106,6 +107,7 @@ class GNSSDriver:
                 gpsd_data = next(self.gnss_getter)
             if "class" in gpsd_data and gpsd_data["class"] == "TPV" and "mode" in gpsd_data and gpsd_data["mode"] >=2:                    
                 current_gnss_data = sl.GNSSData()
+
                 if not ("lat" in gpsd_data and "lon" in gpsd_data and "altMSL" in gpsd_data):
                     log.warning("Incomplete TPV message received: missing lat/lon/altMSL")
                 current_gnss_data.set_coordinates(gpsd_data.get("lat", 0.0), gpsd_data.get("lon", 0.0), gpsd_data.get("altMSL", 0.0), False)
@@ -115,7 +117,6 @@ class GNSSDriver:
 
                 gpsd_mode = gpsd_data["mode"]
                 sl_mode = sl.GNSS_MODE.UNKNOWN
-
                 if gpsd_mode == 0:  # MODE_NOT_SEEN
                     sl_mode = sl.GNSS_MODE.UNKNOWN
                 elif gpsd_mode == 1:  # MODE_NO_FIX
@@ -149,7 +150,6 @@ class GNSSDriver:
                     elif gpsd_status == 9:  # STATUS_PPS_FIX
                         sl_status = sl.GNSS_STATUS.SINGLE
 
-
                 current_gnss_data.gnss_mode = sl_mode.value
                 current_gnss_data.gnss_status = sl_status.value
                 
@@ -165,19 +165,26 @@ class GNSSDriver:
                     gpsd_data["epv"] * gpsd_data["epv"]
                 ]
                 current_gnss_data.position_covariances = position_covariance
-                timestamp_microseconds = int(gpsd_data["time"].timestamp() * 1000000)
-                ts = sl.Timestamp()
-                ts.set_microseconds(timestamp_microseconds)
-                current_gnss_data.ts = ts
 
-                # Update snapshot for main program
-                with self.snapshot_lock:
-                    self.snapshot = GNSSSnapshot(
-                        timestamp = timestamp_microseconds,
-                        speed = gpsd_data["speed"] if "speed" in gpsd_data else 0.0,
-                        lon = gpsd_data["lon"] if "lon" in gpsd_data else 0.0,
-                        lat = gpsd_data["lat"] if "lat" in gpsd_data else 0.0
-                    )
+                # Timestamp is a ISO 8601 time string converted to a datetime object by gpsdclient
+                if not ("time" in gpsd_data):
+                    log.warning("TPV message missing timestamp")
+                else:
+                    timestamp_seconds = float(gpsd_data["time"].timestamp())
+                    timestamp_microseconds = int(timestamp_seconds * 1000000)
+                    ts = sl.Timestamp()
+                    ts.set_microseconds(timestamp_microseconds)
+                    current_gnss_data.ts = ts
+
+                    # Update snapshot for main thread
+                    if "speed" in gpsd_data and "lon" in gpsd_data and "lat" in gpsd_data:
+                        with self.snapshot_lock:
+                            self.snapshot = GNSSSnapshot(
+                                timestamp = timestamp_microseconds,
+                                speed = gpsd_data["speed"] if "speed" in gpsd_data else 0.0,
+                                lon = gpsd_data["lon"] if "lon" in gpsd_data else 0.0,
+                                lat = gpsd_data["lat"] if "lat" in gpsd_data else 0.0
+                            )
                 return current_gnss_data
 
             elif gpsd_data.get("class") == "SKY": # Informational message about satellite status
