@@ -1,0 +1,13 @@
+"""
+APM (Autonomous Pacemaker)
+
+Control logic for a self-driving RC car that acts as a pacemaker / "rabbit" on a running track. 
+Designed to run on a ZED Box Orin NX with front and rear-mounted ZED X stereo cameras.
+
+- apm.drivers       - hardware interfaces (Arduino, GNSS, ZED X Cameras)
+- apm.vision        - lane detection and runner tracking
+- apm.control       - speed and lane regulation (cruise control, distance keeping, lane keeping)
+- apm.modes         - selectable run modes' logic (normal, debug, hardware tests)
+- apm.webapp        - local web interface for configuration and start/stop
+- apm.orchestrator  - top-level state machine tying it all together
+"""
