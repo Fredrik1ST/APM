@@ -1,15 +1,19 @@
-# Cameras
+# --- Constant speed mode --------------------------------------
+[constant_speed]
+
+# --- Cameras --------------------------------------
 
 [camera.front]
 fps = 15                    
-resolution = "SVGA"         # 960x600 [pixels]
+resolution = "SVGA"         # SVGA = 960x600 [pixels]
 serial_number = 42146143    # 2.2mm big lens
+record = false              # Save SVO video recordings to disk (at logs/recordings/front_YYYYMMDD_HHMMSS.svo)
+
 
 [camera.front.body_tracking]
 enable = false
 detection_confidence = 40
 detection_model = "HUMAN_BODY_FAST"
-show_image = false
 
 [camera.front.lane_keeping]
 cut_top = 0.571              # fraction of image height to crop (4/7)
@@ -21,43 +25,53 @@ show_lines = false
 
 [camera.back]
 fps = 15
-resolution = "SVGA"         # 960x600 [pixels]
+resolution = "SVGA"         # SVGA = 960x600 [pixels]
 serial_number = 40329509    # 4mm small lens
+record = false              # Save SVO video recordings to disk (at logs/recordings/back_YYYYMMDD_HHMMSS.svo)
 
 [camera.back.body_tracking]
 enable = true
 detection_confidence = 40
 detection_model = "HUMAN_BODY_FAST"
-show_image = false
 
 
-# Control parameters
+# --- Control parameters --------------------------------------
 
 [cruise_control]
 k_acceleration = 1.5         # sigmoid steepness
 k_deceleration = 1.5
 shift_acceleration = 7.0
 shift_deceleration = 7.0
-curve_duration = 7.0          # [seconds] 
+curve_duration = 7.0        # [seconds] 
 
 [distance_control]
-d_min = 2.0                  # [meters]
-d_max = 6.0                  # [meters]
+d_min = 2.0                 # [meters]
+d_max = 6.0                 # [meters]
 
-
-# PID
-
-[pid.motor]
-kp = 80.0
-ki = 1251.0
-kd = 0.0
-
-[pid.distance]
+[distance_control.pid]
 kp = 0.3
 ki = 0.0
 kd = 0.06
 gamma = 0.1
 beta = 1.0
+
+# Velocity profile parameters
+[velocity_profile.linear]
+t_accel = 4.0               # [seconds] Time to reach target speed during linear acceleration
+
+[velocity_profile.exponential]
+alpha = 0.7                 # Higher alpha = faster acceleration
+
+[velocity_profile.sigmoid]
+k = 2.0                     # Steepness: higher = faster transition through the middle
+s = 3.0                     # Inflection point: time at which the transition is at its midpoint
+
+# PID
+[pid.motor]
+kp = 80.0
+ki = 1251.0
+kd = 0.0
+
 
 [pid.lane_angle]
 kp = 0.9
@@ -70,16 +84,16 @@ ki = 0.0
 kd = 0.03
 
 
-# GNSS
+# --- GNSS --------------------------------------
 
 [gnss]
 device = "/dev/ttyACM0"
+measurement_rate = 10       # [Hz]
 baud_rate = 115200
-speed_threshold = 0.07       # m/s — minimum speed to count distance
+speed_threshold = 0.07      # m/s — minimum speed to count distance
 
 
 # Arduino (TCP socket and PWM values)
-
 [arduino.socket]
 host = "192.168.56.1"
 port = 49152

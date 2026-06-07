@@ -38,9 +38,10 @@ class DetectedBody:
 
 @dataclass
 class CameraSnapshot:
+    """Copy of the latest camera frame and detected bodies"""
     image: np.ndarray           # HxWx4 BGRA left image
-    timestamp_ms: int
-    received_at: float = field(default_factory=time.monotonic)  # Monotonic clock at capture time (seconds)
+    timestamp_ms: int           # Timestamp from the camera's internal clock
+    received_at: float = field(default_factory=time.monotonic)  # Monotonic clock at copy time
     bodies: list[DetectedBody] = field(default_factory=list)  # Empty if body tracking is off
 
 
@@ -167,7 +168,7 @@ class CameraDriver:
                     ]
 
                 with self._lock:
-                    self._snapshot = CameraSnapshot(image=frame, timestamp_ms=ts_ms, bodies=detected)
+                    self._snapshot = CameraSnapshot(image=frame, timestamp_ms=ts_ms, bodies=detected_bodies)
 
         if body_tracking:
             camera.disable_body_tracking()

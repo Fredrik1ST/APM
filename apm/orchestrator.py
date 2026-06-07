@@ -18,19 +18,20 @@ Main states:
 import time
 import logging
 import threading
+import datetime
+from pathlib import Path
 from enum import IntEnum
 import config_handler as config
 
-# ---- Drivers: Responsible for interfacing with asynchronous data sources (cameras, GNSS, Arduino) ----
-from apm.drivers.arduino import ArduinoDriver, blink
-from apm.drivers.gnss import GNSSDriver
-# From the other modules, import their respective drivers
+RECORDINGS_DIR = Path(__file__).resolve().parent.parent / "logs" / "recordings"
 
+# ---- Drivers: Responsible for interfacing with asynchronous data sources (cameras, GNSS, Arduino) ----
+from apm.drivers.arduino import ArduinoDriver
+from apm.drivers.gnss import GNSSDriver
+from apm.drivers.camera import CameraDriver
 
 # ---- Program modes (different main loops for different functionalities, e.g. debug modes) ----
-from modes.arduino_test import arduino_test_mode
-from modes.gnss_test import gnss_test_mode
-
+import modes
 
 log = logging.getLogger(__name__)
 
@@ -63,23 +64,33 @@ class Orchestrator:
 
     def __init__(self):
         config.initialize()
-        self.cfg = config.load()
-        self.state = State.IDLE
-        self.mode = Mode.NONE
+        self.cfg    = config.load()
+        self.state  = State.IDLE
+        self.mode   = Mode.NONE
 
         # Drivers for hardware components - Handle communication, data retrieval and processing in separate threads
-        self.arduino = ArduinoDriver()
-        self.gnss = GNSSDriver()
-        #self.front_camera = CameraDriver()
-        #self.back_camera = CameraDriver()
+        self.arduino        = ArduinoDriver()
+        self.gnss           = GNSSDriver()
+        self.front_camera   = CameraDriver()
+        self.back_camera    = CameraDriver()
 
         # Signals and status to/from user interface (e.g. web app)
-        self._run_event  = threading.Event()  # set by request_start()
-        self._stop_event = threading.Event()  # set by request_stop()
+        self._run_event     = threading.Event()  # set by request_start()
+        self._stop_event    = threading.Event()  # set by request_stop()
 
         self.arduino_connected: bool = False
         self.front_camera_ok: bool = False
         self.back_camera_ok: bool = False
+        self.gnss_ok: bool = False
+
+
+    def _svo_path(self, camera_name: str) -> str | None:
+        """Return a timestamped SVO recording path for the given camera, or None if recording is disabled."""
+        if not self.cfg['camera'][camera_name].get('record'):
+            return None
+        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        return str(RECORDINGS_DIR / f'{camera_name}_{timestamp}.svo2')
 
 
     # -------------------------------------------------------------------------
@@ -105,6 +116,7 @@ class Orchestrator:
         self.mode = mode
         self._stop_event.clear()
         self._run_event.set()
+
 
     # -------------------------------------------------------------------------
     # Main entry point
@@ -158,23 +170,37 @@ class Orchestrator:
             case Mode.CAMERA_TEST_FRONT:
                 pass # TODO
             case Mode.CAMERA_TEST_BACK:
-                pass # TODO
+                self._run_camera_test_back()
             case Mode.GNSS_TEST:
                 self._run_gnss_test()
             case Mode.ARDUINO_TEST:
                 self._run_arduino_test()
-    
+
+
+    def _run_camera_test_back(self) -> None:
+        """Start the back camera with body tracking enabled. Log whether a runner is detected and their distance."""
+        self.back_camera.start(
+            serial = self.cfg['camera']['back']['serial_number'],
+            fps = self.cfg['camera']['back']['fps'],
+            body_tracking = True,
+            body_tracking_confidence = self.cfg['camera']['back']['body_tracking']['detection_confidence'],
+            svo_path = self._svo_path('back'),
+        )
+        try:
+            modes.camera_test_back(self.back_camera, self._stop_event, self.cfg)
+        finally:
+            self.back_camera.stop()
+
 
     def _run_gnss_test(self) -> None:
         """Verify that the GNSS receiver is working + GPSD daemon is running by logging position and speed."""
         if self.gnss.start() != 0:
-            log.error('GNSS failed to start — aborting test.')
+            log.error('GNSS failed to start - aborting test.')
             return
         try:
-            gnss_test_mode(self.gnss, self._stop_event, self.cfg)
+            modes.gnss_test(self.gnss, self._stop_event, self.cfg)
         finally:
             self.gnss.stop()
-            self._shutdown()
 
 
     def _run_arduino_test(self) -> None:
@@ -183,10 +209,9 @@ class Orchestrator:
             host = self.cfg["arduino"]["socket"]["host"],
             port = self.cfg["arduino"]["socket"]["port"])
         try:
-            arduino_test_mode(self.arduino, self._stop_event, self.cfg)
+            modes.arduino_test(self.arduino, self._stop_event, self.cfg)
         finally:
             self.arduino.stop()
-            self._shutdown()
 
 
     def _shutdown(self) -> None:
