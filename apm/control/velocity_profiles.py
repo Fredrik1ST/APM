@@ -4,7 +4,7 @@ import math
 import time
 
 
-class LinearProfile:
+class LinearRamp:
     """A linear velocity profile with constant acceleration / deceleration. Reaches target in fixed time."""
 
     def __init__(self, t_accel: float):
@@ -35,7 +35,8 @@ class LinearProfile:
         self._v1 = speed
         self._t_elapsed = 0.0
 
-class ExponentialProfile:
+
+class ExponentialRamp:
     """An exponential (first-order low-pass) velocity profile for smooth acceleration."""
 
     def __init__(self, alpha: float):
@@ -52,7 +53,7 @@ class ExponentialProfile:
         self.current = speed
 
 
-class SigmoidProfile:
+class SigmoidRamp:
     """Velocity profile using a logistic sigmoid function. Asymptotic at both ends. 
     Approaches but never exactly reaches the target.
 

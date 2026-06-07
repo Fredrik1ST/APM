@@ -14,9 +14,10 @@ Notes:
 import time
 import logging
 import threading
-
 import tomlkit
-from apm.drivers.arduino import ArduinoWrapper, MessageCommands, blink, mps_to_pwm
+from apm.drivers.arduino import ArduinoDriver, MessageCommands, blink, mps_to_pwm
+from apm.control.velocity_profiles import LinearRamp, ExponentialRamp, SigmoidRamp
+
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ _TICK = 0.05        # Main loop interval [s] - 20 Hz
 _LOG_INTERVAL = 1.0 # How often to print feedback during a phase [s]
 
 
-def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
+def arduino_test_mode(arduino: ArduinoDriver, stop_event: threading.Event,
                       cfg: tomlkit.TOMLDocument) -> None:
     angle_neutral     = cfg["arduino"]["steer_angle"]["neutral"]
     angle_right       = cfg["arduino"]["steer_angle"]["max_right"]
@@ -32,9 +33,11 @@ def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
     neutral_speed_pwm = cfg["arduino"]["speed_pwm"]["neutral"]
     pwm_factor        = cfg["arduino"]["speed_pwm"]["factor"]
 
-    SPEED_1 = 0.3 # m/s
-    SPEED_2 = 0.6
-    SPEED_3 = 0.9
+    SPEED_1 = 1 # m/s
+    SPEED_2 = 2
+    SPEED_3 = 0
+
+    set_speed = LinearRamp(t_accel=4.0) # Velocity profile for smooth speed changes
 
     log.info('Arduino test mode started - waiting for Arduino to connect...')
     if not _wait_for_connection(arduino, stop_event):
@@ -75,19 +78,19 @@ def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
     # Phase 3 - Motor
     log.info('--- Phase 3: Motor test - ensure car is elevated or has space! ---')
     log.info(f'  Spinning at {SPEED_1} m/s...')
-    _run_phase(arduino, stop_event, duration=2.0,
+    _run_phase(arduino, stop_event, duration=8.0,
                run=True, steer_angle=angle_neutral,
-               speed_pwm=mps_to_pwm(SPEED_1, pwm_factor, neutral_speed_pwm))
+               speed_pwm=mps_to_pwm(set_speed.update(target= SPEED_1, dt = _TICK)))
     
     log.info(f'  Spinning at {SPEED_2} m/s...')
-    _run_phase(arduino, stop_event, duration=2.0,
+    _run_phase(arduino, stop_event, duration=8.0,
                run=True, steer_angle=angle_neutral,
-               speed_pwm=mps_to_pwm(SPEED_2, pwm_factor, neutral_speed_pwm))
+               speed_pwm=mps_to_pwm(set_speed.update(target = SPEED_2, dt = _TICK)))
 
     log.info(f'  Spinning at {SPEED_3} m/s...')
-    _run_phase(arduino, stop_event, duration=2.0,
+    _run_phase(arduino, stop_event, duration=5.0,
                run=True, steer_angle=angle_neutral,
-               speed_pwm=mps_to_pwm(SPEED_3, pwm_factor, neutral_speed_pwm))
+               speed_pwm=mps_to_pwm(set_speed.update(target = SPEED_3, dt = _TICK)))
 
     if stop_event.is_set():
         return
@@ -113,8 +116,8 @@ def arduino_test_mode(arduino: ArduinoWrapper, stop_event: threading.Event,
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _wait_for_connection(arduino: ArduinoWrapper, stop_event: threading.Event,
-                         timeout: float = 30.0) -> bool:
+def _wait_for_connection(arduino: ArduinoDriver, stop_event: threading.Event,
+                         timeout: float = 10.0) -> bool:
     deadline = time.monotonic() + timeout
     while not arduino.is_connected:
         if stop_event.is_set():
@@ -127,7 +130,7 @@ def _wait_for_connection(arduino: ArduinoWrapper, stop_event: threading.Event,
     return True
 
 
-def _run_phase(arduino: ArduinoWrapper, stop_event: threading.Event,
+def _run_phase(arduino: ArduinoDriver, stop_event: threading.Event,
                duration: float, run: bool, steer_angle: float,
                speed_pwm: float, blink_leds: bool = False, brake: bool = False) -> None:
     """Send a fixed command for X seconds, logging feedback once per second."""
