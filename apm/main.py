@@ -42,25 +42,37 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from orchestrator import Orchestrator
+import config_handler
 
 _LOG_DIR = Path(__file__).resolve().parent.parent / 'logs'
 
-def _setup_logging() -> None:
-    """Write logs to file and console"""
+def _setup_logging(config) -> None:
+    """Write logs to file and console, applying per-module levels from config."""
     _LOG_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     log_file = _LOG_DIR / f'{timestamp}.log'
 
+    log_cfg = config.get('logging', {})
+    root_level = getattr(logging, log_cfg.get('level', 'DEBUG').upper(), logging.DEBUG)
+
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=root_level,
         format='%(asctime)s  %(levelname)-8s  %(name)s  %(message)s',
         handlers=[
             logging.FileHandler(log_file),
-            logging.StreamHandler(),   # keep console output
+            logging.StreamHandler(),
         ],
     )
+    # Apply per-module levels from config
+    for module, level_str in log_cfg.get('levels', {}).items():
+        level = getattr(logging, level_str.upper(), None)
+        if level is not None:
+            logging.getLogger(module).setLevel(level)
+
     logging.info(f'Logging to {log_file}')
 
+
 if __name__ == '__main__':
-    _setup_logging()
+    config_handler.initialize()
+    _setup_logging(config_handler.load())
     Orchestrator().run()

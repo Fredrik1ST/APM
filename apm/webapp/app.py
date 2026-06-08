@@ -72,10 +72,18 @@ MODE_LABELS: dict[Mode, str] = {
 _ACTIVE_STATES = {State.STARTING, State.RUNNING, State.RUNNING_PACE,
                   State.RUNNING_DIST, State.RUNNING_CONST, State.STOPPING}
 
-MODE_LOGGERS: dict[Mode, str] = {
-    Mode.ARDUINO_TEST: 'modes.arduino_test',
-    Mode.GNSS_TEST:    'modes.gnss_test',
-}
+
+#MODE_LOGGERS: dict[Mode, str] = {
+#    Mode.NORMAL:       'apm.modes.normal',
+#    Mode.PACE_ONLY:    'apm.modes.pace_only',
+#    Mode.DISTANCE_ONLY:'apm.modes.distance_only',
+#    Mode.CONSTANT_SPEED:'apm.modes.constant_speed',
+#    Mode.CAMERA_TEST:  'apm.modes.camera_test',
+#    Mode.CAMERA_TEST_FRONT: 'apm.modes.camera_test_front',
+#    Mode.CAMERA_TEST_BACK:  'apm.modes.camera_test_back',
+#    Mode.ARDUINO_TEST: 'apm.modes.arduino_test',
+#    Mode.GNSS_TEST:    'apm.modes.gnss_test'
+#}
 
 
 # ---------------------------------------------------------------------------
@@ -154,16 +162,14 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                 arduino_row   = ui.row().classes('items-center gap-2')
                 front_cam_row = ui.row().classes('items-center gap-2')
                 back_cam_row  = ui.row().classes('items-center gap-2')
+                gnss_row      = ui.row().classes('items-center gap-2')
                 ui.separator().classes('my-2')
                 mode_log_row  = ui.row().classes('items-start gap-2 w-full')
 
         # --- config editor ------------------------------------------------
         with ui.card().classes('w-full mx-4 mb-4'):
             with ui.expansion('Configuration', icon='settings').classes('w-full'):
-                with ui.column().classes('w-full gap-1') as config_col:
-                    doc, inputs = _build_config_editor()
-
-                with ui.row().classes('mt-3'):
+                with ui.row().classes('mb-3'):
                     def save_config() -> None:
                         try:
                             for keys, inp in inputs:
@@ -198,6 +204,9 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                     ui.button('Reset to defaults', icon='restart_alt',
                               color='orange', on_click=reset_defaults)
 
+                with ui.column().classes('w-full gap-1') as config_col:
+                    doc, inputs = _build_config_editor()
+
         # --- status helpers -----------------------------------------------
         def update_status_row(row, label: str, ok: bool, logger_name: str) -> None:
             row.clear()
@@ -223,12 +232,16 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                 start_stop_btn.set_text('Start')
                 start_stop_btn.props('color=green')
 
-            update_status_row(arduino_row,   'Arduino / Ethernet', orchestrator.arduino_connected, 'arduino_comm')
-            update_status_row(front_cam_row, 'Front camera',       orchestrator.front_camera_ok,   'vision.camera.front')
-            update_status_row(back_cam_row,  'Back camera',        orchestrator.back_camera_ok,    'vision.camera.back')
+            update_status_row(arduino_row,   'Arduino',            orchestrator.arduino_connected, 'apm.drivers.arduino')
+            update_status_row(front_cam_row, 'Front camera',       orchestrator.front_camera_ok,   'apm.drivers.camera.front')
+            update_status_row(back_cam_row,  'Back camera',        orchestrator.back_camera_ok,    'apm.drivers.camera.back')
+            update_status_row(gnss_row,      'GNSS',               orchestrator.gnss_ok,           'apm.drivers.gnss')
 
+            # Show latest log entry from the currently running program mode
             mode_log_row.clear()
-            logger_name = MODE_LOGGERS.get(orchestrator.mode)
+            #logger_name = MODE_LOGGERS.get(orchestrator.mode)
+            logger_name = f'apm.modes.{orchestrator.mode.name.lower()}' if orchestrator.mode != Mode.NONE else None
+
             if logger_name:
                 record = log_handler.latest(logger_name)
                 if record:

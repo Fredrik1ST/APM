@@ -27,8 +27,6 @@ import time
 import pyzed.sl as sl
 from dataclasses import dataclass, field
 
-log = logging.getLogger(__name__)
-
 
 @dataclass
 class DetectedBody:
@@ -61,7 +59,8 @@ class CameraDriver:
         cam.stop() # When current program mode has completed
     '''
 
-    def __init__(self):
+    def __init__(self, name: str = "Camera"):
+        self.log = logging.getLogger(f"{__name__}.{name}")
         self._stop = threading.Event()
         self._snapshot: CameraSnapshot | None = None
         self._lock = threading.Lock()
@@ -106,7 +105,7 @@ class CameraDriver:
         camera = sl.Camera()
 
         if camera.open(init_params) != sl.ERROR_CODE.SUCCESS:
-            log.error(f'Failed to open camera {serial}')
+            self.log.error(f'Failed to open camera {serial}')
             return
 
         self.is_opened = True
@@ -116,12 +115,12 @@ class CameraDriver:
             rec_params = sl.RecordingParameters(svo_path, sl.SVO_COMPRESSION_MODE.H265)
             err = camera.enable_recording(rec_params)
             if err != sl.ERROR_CODE.SUCCESS:
-                log.error(f'Camera {serial}: failed to enable SVO recording to {svo_path}: {err}')
+                self.log.error(f'Camera {serial}: failed to enable SVO recording to {svo_path}: {err}')
                 camera.close()
                 self.is_opened = False
                 self._stop.set()
                 return
-            log.info(f'Camera {serial}: recording to {svo_path}')
+            self.log.info(f'Camera {serial}: recording to {svo_path}')
 
         body_runtime_params = None
         if body_tracking:
@@ -134,10 +133,10 @@ class CameraDriver:
             pos_tracking.set_floor_as_origin = True
             camera.enable_positional_tracking(pos_tracking)
 
-            log.info(f'Camera {serial}: loading body tracking module...')
+            self.log.info(f'Camera {serial}: loading body tracking module...')
             err = camera.enable_body_tracking(body_params)
             if err != sl.ERROR_CODE.SUCCESS:
-                log.error(f'Camera {serial}: failed to enable body tracking: {err}')
+                self.log.error(f'Camera {serial}: failed to enable body tracking: {err}')
                 camera.close()
                 self.is_opened = False
                 self._stop.set()
@@ -149,7 +148,7 @@ class CameraDriver:
         runtime = sl.RuntimeParameters()
         image = sl.Mat()
         bodies = sl.Bodies() if body_tracking else None
-        log.info(f'Camera {serial} started (body_tracking={body_tracking})')
+        self.log.info(f'Camera {serial} started (body_tracking={body_tracking})')
 
         while not self._stop.is_set():
             if camera.grab(runtime) == sl.ERROR_CODE.SUCCESS:
@@ -176,7 +175,7 @@ class CameraDriver:
             camera.disable_recording()
         camera.close()
         self.is_opened = False
-        log.info(f'Camera {serial} closed')
+        self.log.info(f'Camera {serial} closed')
 
 
     def get_snapshot(self) -> CameraSnapshot | None:
@@ -191,5 +190,5 @@ class CameraDriver:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=5.0)
             if self._thread.is_alive():
-                log.warning('Camera thread did not stop cleanly within timeout')
-        log.info('CameraDriver stopped')
+                self.log.warning('Camera thread did not stop cleanly within timeout')
+        self.log.info('CameraDriver stopped')

@@ -1,14 +1,38 @@
+# --- Logging --------------------------------------------------
+
+[logging]
+# Levels: DEBUG < INFO < WARNING < ERROR < CRITICAL
+level = "DEBUG"     # Default root logger level = level of any logger without a specific override in [logging.levels]
+
+[logging.levels]
+# Per-module overrides (e.g. to increase verbosity for debugging / reduce it for noisy modules
+
+"apm.control.cruise_control" = "INFO"
+"apm.control.distance_control" = "INFO"
+"apm.control.lane_keeper"  = "WARNING"
+"apm.control.pid_controller" = "WARNING"
+"apm.control.velocity_profiles" = "WARNING"
+
+"apm.drivers.arduino" = "INFO"
+"apm.drivers.camera.front" = "INFO"
+"apm.drivers.camera.back" = "INFO"
+"apm.drivers.gnss" = "INFO"
+
+"apm.vision.frame_encoder" = "WARNING"
+"apm.vision.line_detector" = "WARNING"
+
+
 # --- Constant speed mode --------------------------------------
 [constant_speed]
 
-# --- Cameras --------------------------------------
+# --- Cameras --------------------------------------------------
 
 [camera.front]
 fps = 15                    
 resolution = "SVGA"         # SVGA = 960x600 [pixels]
 serial_number = 42146143    # 2.2mm big lens
 record = false              # Save SVO video recordings to disk (at logs/recordings/front_YYYYMMDD_HHMMSS.svo)
-
+display = false             # Convert frames to JPEG and stream to web app
 
 [camera.front.body_tracking]
 enable = false
@@ -21,21 +45,35 @@ angle_threshold = 50         # [degrees]
 angle_setpoint = 90          # starting angle [deg] (0 = left, 90 = straight, 180 = right)
 position_setpoint = 363      # pixels
 set_width = 640              # pixels
-show_lines = false
+show_lines = false           # Draw lane lines on the video stream (for display / debugging)
 
 [camera.back]
 fps = 15
 resolution = "SVGA"         # SVGA = 960x600 [pixels]
 serial_number = 40329509    # 4mm small lens
 record = false              # Save SVO video recordings to disk (at logs/recordings/back_YYYYMMDD_HHMMSS.svo)
-
+display = false             # Convert frames to JPEG and stream to web app
+         
 [camera.back.body_tracking]
 enable = true
 detection_confidence = 40
 detection_model = "HUMAN_BODY_FAST"
 
+# --- Vision processing ----------------------------------------
 
-# --- Control parameters --------------------------------------
+[frame_encoding]
+jpeg_quality = 80       # 0-100 (higher = better)
+jpeg_scale = 0.5        # Fraction to scale down frames for display (e.g. in web app) to reduce bandwidth and CPU usage
+
+[lane_detection]
+canny_sigma = 0.33      # Standard deviation of Gaussian blur before edge detection (higher = more blur = fewer edges)
+angle_threshold = 60    # [degrees] Max angle from vertical for a line to be considered a lane line
+hough_threshold = 90    # Minimum Hough accumulator votes to accept a line.
+mask_polygon = [[330, 172], [340, 399], [591, 399], [444, 172]] # Polygon to mask out battery box in preprocessed image
+cut_top = 0.571         # fraction of image height to crop (4/7)
+output_width = 640      # pixels to resize width to before lane detection (height is scaled proportionally)
+
+# --- Control parameters ---------------------------------------
 
 [cruise_control]
 k_acceleration = 1.5         # sigmoid steepness
@@ -54,6 +92,9 @@ ki = 0.0
 kd = 0.06
 gamma = 0.1
 beta = 1.0
+
+[lane_keeping]
+
 
 # Velocity profile parameters
 [velocity_profile.linear]
@@ -84,7 +125,7 @@ ki = 0.0
 kd = 0.03
 
 
-# --- GNSS --------------------------------------
+# --- GNSS -----------------------------------------------------
 
 [gnss]
 device = "/dev/ttyACM0"
