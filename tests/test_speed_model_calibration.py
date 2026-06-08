@@ -36,4 +36,4 @@ def test_fit(calibrator):
 
 
 def test_plot(calibrator, plot):
-    calibrator.plot(save_path=None if plot else 'tests/calibration.pdf')
+    calibrator.plot(save_path=None if plot else 'tests/output/calibration.pdf')

@@ -1,5 +1,6 @@
 '''Test velocity profiles for smoothing out speed transitions.'''
 
+import os
 import pytest
 import matplotlib.pyplot as plt
 from apm.control.velocity_profiles import LinearProfile, ExponentialProfile, SigmoidProfile
@@ -105,5 +106,5 @@ def test_plot_all_profiles(plot):
     if plot:
         plt.show()
     else:
-        plt.savefig("tests/velocity_profiles.pdf")
-        print("\nPlot saved to tests/velocity_profiles.pdf")
+        plt.savefig("tests/output/velocity_profiles.pdf")
+        print("\nPlot saved to tests/output/velocity_profiles.pdf")
