@@ -9,14 +9,15 @@ import threading
 import logging
 
 import tomlkit
-from apm.drivers.gnss import GNSSWrapper
+
+from apm.drivers.gnss import GNSSDriver
 
 log = logging.getLogger(__name__)
 
 _LOG_INTERVAL = 1.0  # How often to print a position/speed reading [s]
 
 
-def gnss_test_mode(gnss: GNSSWrapper, stop_event: threading.Event,
+def gnss_test_mode(gnss: GNSSDriver, stop_event: threading.Event,
                    cfg: tomlkit.TOMLDocument) -> None:
     speed_threshold = cfg["gnss"]["speed_threshold"]
 

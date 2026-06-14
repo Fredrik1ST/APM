@@ -1,4 +1,6 @@
-"""Velocity profiles for smooth speed transitions. Used as setpoint filters upstream of a controller (e.g. PID)."""
+"""Velocity profiles for smooth speed transitions. 
+
+Used as setpoint filters upstream of a controller (e.g. PID)."""
 
 import math
 import time

@@ -12,6 +12,7 @@ import threading
 import logging
 
 import tomlkit
+
 from apm.drivers.camera import CameraDriver
 from apm.vision.frame_encoder import encode_jpeg
 

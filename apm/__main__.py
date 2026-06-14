@@ -41,8 +41,10 @@ Main control loop:
 import logging
 from datetime import datetime
 from pathlib import Path
-from orchestrator import Orchestrator
-import config_handler
+
+from apm import config_handler
+from apm.orchestrator import Orchestrator
+from apm.webapp.app import start as start_webapp
 
 _LOG_DIR = Path(__file__).resolve().parent.parent / 'logs'
 
@@ -64,7 +66,7 @@ def _setup_logging(config) -> None:
         format='%(asctime)s  %(levelname)-8s  %(name)s  %(message)s',
         handlers=[
             logging.FileHandler(log_file),   # persists to disk
-            logging.StreamHandler(),          # echoes to terminal
+            logging.StreamHandler(),         # echoes to terminal
         ],
     )
 
@@ -80,5 +82,14 @@ def _setup_logging(config) -> None:
 
 if __name__ == '__main__':
     config_handler.initialize()
-    _setup_logging(config_handler.load())
-    Orchestrator().run()
+    cfg = config_handler.load()
+    _setup_logging(cfg)
+
+    # The Orchestrator manages the main control loop, modes, and hardware communication
+    orchestrator = Orchestrator()
+
+    # The web app runs in a separate thread and allows the user to start/stop, select modes, and adjust config params
+    start_webapp(orchestrator, host=cfg['webapp']['host'], port=cfg['webapp']['port'])
+    
+    # Point of no return. Time to start the main loop and run the APM!
+    orchestrator.run()

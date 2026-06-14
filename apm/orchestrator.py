@@ -10,9 +10,8 @@ import threading
 import datetime
 from pathlib import Path
 from enum import IntEnum
-import config_handler as config
 
-RECORDINGS_DIR = Path(__file__).resolve().parent.parent / "logs" / "recordings"
+from apm import config_handler as config
 
 # ---- Drivers: Responsible for interfacing with asynchronous data sources (cameras, GNSS, Arduino) ----
 from apm.drivers.arduino import ArduinoDriver
@@ -20,9 +19,10 @@ from apm.drivers.gnss import GNSSDriver
 from apm.drivers.camera import CameraDriver
 
 # ---- Program modes (different main loops for different functionalities, e.g. debug modes) ----
-import modes
+from apm import modes
 
 log = logging.getLogger(__name__)
+RECORDINGS_DIR = Path(__file__).resolve().parent.parent / "logs" / "recordings"
 
 
 class State(IntEnum):
@@ -48,6 +48,7 @@ class Mode(IntEnum):
     CAMERA_TEST_BACK = 102
     ARDUINO_TEST = 200
     GNSS_TEST = 300
+    LANE_KEEPER_TEST = 400
 
 class Orchestrator:
     """
@@ -133,11 +134,10 @@ class Orchestrator:
 
     def run(self) -> None:
         '''
-        Start the web interface then sit in an idle/run cycle until the
-        process is killed. The web UI drives request_start() / request_stop().
+        Wait for a mode to be set + start signal from user (e.g. web app, button press, or force_start() method).
+        
+        Config can be adjusted while waiting in IDLE state.
         '''
-        from webapp.app import start as start_webapp
-        start_webapp(self)
 
         while True:
             self.state = State.IDLE
@@ -150,6 +150,7 @@ class Orchestrator:
             except Exception:
                 log.exception('Orchestrator error')
                 self.state = State.ERROR
+                time.sleep(3)
                 self._stop_event.clear()
             finally:
                 self._shutdown()
@@ -167,6 +168,8 @@ class Orchestrator:
         log.info(f'Starting in {self.mode.name} mode')
 
         match self.mode:
+            case Mode.NONE:
+                log.warning('No mode selected!')
             case Mode.NORMAL:
                 pass # TODO
             case Mode.PACE_ONLY:
@@ -185,6 +188,8 @@ class Orchestrator:
                 self._run_gnss_test()
             case Mode.ARDUINO_TEST:
                 self._run_arduino_test()
+            case Mode.LANE_KEEPER_TEST:
+                self._run_lane_keeper_test()
 
 
     def _run_camera_test_back(self) -> None:
@@ -194,6 +199,7 @@ class Orchestrator:
         try:
             modes.camera_test_back(self.back_camera, self._stop_event, self.cfg)
         finally:
+            self.mode = Mode.STOPPING
             self.back_camera.stop()
 
 
@@ -206,24 +212,45 @@ class Orchestrator:
         try:
             modes.gnss_test(self.gnss, self._stop_event, self.cfg)
         finally:
+            self.mode = Mode.STOPPING
             self.gnss.stop()
 
 
     def _run_arduino_test(self) -> None:
-        """Send commands to the Arduino and verify feedback until user stops the test"""
+        """Send commands to the Arduino and verify feedback until user stops the test."""
         kwargs = self._arduino_kwargs()
         self.arduino.start(kwargs)
         try:
             modes.arduino_test(self.arduino, self._stop_event, self.cfg)
         finally:
+            self.mode = Mode.STOPPING
+            self.arduino.stop()
+
+
+    def _run_lane_keeper_test(self) -> None:
+        """Test the Lane Keeper controller without any speed control for tuning / debugging."""
+        cam_kwargs = self._camera_kwargs(name='front')
+        self.front_camera.start(cam_kwargs)
+
+        arduino_kwargs = self._arduino_kwargs()
+        self.arduino.start(arduino_kwargs)
+        try:
+            modes.lane_keeper_test(self.front_camera, self._stop_event, self.cfg)
+        finally:
+            self.mode = Mode.STOPPING
+            self.front_camera.stop()
             self.arduino.stop()
 
 
     def _shutdown(self) -> None:
-        self.state = State.STOPPING
+        if self.arduino.is_connected:
+            self.arduino.stop()
+        if self.front_camera.is_open:
+            self.front_camera.stop()
+        if self.back_camera.is_open:
+
         self._stop_event.clear()
         log.info('Orchestrator stopped')
-        time.sleep(3)
         self.state = State.IDLE
 
 

@@ -13,8 +13,9 @@ APM centered in the lane
 
 import logging
 import math
-from apm.control.pid_controller import PIDController
+
 from apm.vision.line_detector import LaneLines
+from apm.control.pid_controller import PIDController
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +84,8 @@ class LaneKeeper:
         a1, b1 = lines.left_slope, lines.left_intercept
         a2, b2 = lines.right_slope, lines.right_intercept
         if abs(a1) < 1e-6 or abs(a2) < 1e-6:
-            raise ValueError("A lane line is near-horizontal - cannot compute lane center.")
+            side = "Left" if abs(a1) < 1e-6 else "Right"
+            raise ValueError(f" {side} lane line is near-horizontal - cannot compute lane center.")
         x1 = (image_height - b1) / a1
         x2 = (image_height - b2) / a2
         return (x1 + x2) / 2

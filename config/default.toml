@@ -78,20 +78,32 @@ output_width = 640      # pixels to resize width to before lane detection (heigh
 # Control parameters
 # ==============================================================
 
-[lane_keeping]
-cut_top = 0.571              # fraction of image height to crop (4/7)
-angle_threshold = 50         # [degrees]
-angle_setpoint = 90          # starting angle [deg] (0 = left, 90 = straight, 180 = right)
-position_setpoint = 363      # pixels
-set_width = 640              # pixels
-show_lines = false           # Draw lane lines on the video stream (for display / debugging)
+[speed_model]
+factor = 20.23       # m/s to PWM factor for default affine speed model
+offset = 1540        # Neutral PWM value for 0 m/s
+coefficients = [20.23, 1540] # Coefficients for polynomial speed model (starting with highest degree)
 
-[cruise_control]
-k_acceleration = 1.5         # sigmoid steepness
-k_deceleration = 1.5
-shift_acceleration = 7.0
-shift_deceleration = 7.0
-curve_duration = 7.0        # [seconds] 
+[lane_keeping]
+cut_top = 0.571             # fraction of image height to crop (4/7)
+angle_threshold = 50        # [degrees]
+angle_setpoint = 90         # starting angle [deg] (0 = left, 90 = straight, 180 = right)
+position_setpoint = 363     # pixels
+set_width = 640             # pixels
+show_lines = false          # Draw lane lines on the video stream (for display / debugging)
+
+[lane_keeping.pid.angle]
+kp = 0.9
+ki = 0.0
+kd = 0.06
+beta = 1.0                  # Setpoint weighting for proportional term
+gamma = 1.0                 # Setpoint weighting for derivative term
+
+[lane_keeping.pid.position]
+kp = 0.03
+ki = 0.0
+kd = 0.03
+beta = 1.0                  # Setpoint weighting for proportional term
+gamma = 1.0
 
 [distance_control]
 d_min = 2.0                 # [meters]
@@ -101,8 +113,9 @@ d_max = 6.0                 # [meters]
 kp = 0.3
 ki = 0.0
 kd = 0.06
-gamma = 0.1
-beta = 1.0
+beta = 1.0                  # Setpoint weighting for proportional term
+gamma = 0.1                 # Setpoint weighting for derivative term
+
 
 # Velocity profile parameters
 [velocity_profile.linear]
@@ -112,24 +125,16 @@ t_accel = 4.0               # [seconds] Time to reach target speed during linear
 alpha = 0.7                 # Higher alpha = faster acceleration
 
 [velocity_profile.sigmoid]
-k = 2.0                     # Steepness: higher = faster transition through the middle
-s = 3.0                     # Inflection point: time at which the transition is at its midpoint
+k = 2.0                     # (1.5) Steepness: higher = faster transition through the middle
+s = 3.0                     # (7) Inflection point: time at which the transition is at its midpoint
 
 # PID parameters)
 [pid.motor]
-kp = 80.0                   # 80
-ki = 1251.0
-kd = 0.0
+kp = 80.0                   # 80.0
+ki = 1251.0                 # 1251.0
+kd = 0.0                    # 0.0
 
-[pid.lane_angle]
-kp = 0.9
-ki = 0.0
-kd = 0.06
 
-[pid.lane_position]
-kp = 0.03
-ki = 0.0
-kd = 0.03
 
 # ============================================================== 
 # GNSS
@@ -158,3 +163,10 @@ max_left = 135 # Max
 [arduino.speed_pwm] 
 neutral = 1540
 factor = 20.23 # Linear model to convert desired speed (m/s) to PWM (microsecond pulse width)
+
+# ============================================================== 
+# NiceGUI web app
+# ============================================================== 
+[webapp]
+host = "0.0.0.0"
+port = 8080
