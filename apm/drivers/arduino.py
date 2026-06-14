@@ -33,6 +33,7 @@ Notes:
 
 '''
 
+from dataclasses import dataclass, field
 import socket
 import struct
 import logging
@@ -77,50 +78,49 @@ def mps_to_pwm(mps = 0.0, factor=20.23, offset_pwm=1540):
     """
     return (mps * factor) + offset_pwm
 
-
+@dataclass
 class MessageCommands:
     """Formatted message of commands sent from ZED Box to Arduino"""
-    def __init__(self):
-        self.timestamp = 0.0  # Internal - Microseconds since epoch (UTC)
-        self.run = False
-        self.emergency_brake = False
-        self.green_led = False
-        self.red_led = False
-        self.message_nr = 0
-        self.steer_angle = 90.0
-        self.speed_pwm = 0.0
+    timestamp_monotonic: float = field(default_factory=time.monotonic)
+    run: bool = False
+    brake: bool = False
+    green_led: bool = False
+    red_led: bool = False
+    message_nr: int = 0
+    steer_angle: float = 90.0
+    speed_pwm: float = 0.0
 
     @property
     def packed(self):
         """Pack the message into bytes for sending to Arduino"""
         return struct.pack(_COMMANDS_FORMAT,
                            self.run,
-                           self.emergency_brake,
+                           self.brake,
                            self.green_led, self.red_led,
                            self.message_nr,
                            self.steer_angle,
                            self.speed_pwm)
 
 
+@dataclass
 class MessageFeedback:
     """Formatted message of feedback sent from Arduino to ZED Box"""
-    def __init__(self):
-        self.timestamp = 0.0  # Internal - Microseconds since epoch (UTC)
-        self.running = False
-        self.emergency_brake = False
-        self.green_led = False
-        self.red_led = False
-        self.message_nr = 0
-        self.esc_min_pwm = 0.0
-        self.esc_max_pwm = 0.0
-        self.pwm_speed_limit = 0.0
+    timestamp_monotonic: float = field(default_factory=time.monotonic)
+    running: bool = False
+    brake: bool = False
+    green_led: bool = False
+    red_led: bool = False
+    message_nr: int = 0
+    esc_min_pwm: float = 0.0
+    esc_max_pwm: float = 0.0
+    pwm_speed_limit: float = 0.0
 
     @property
     def packed(self):
         """Pack the message into bytes for sending to ZED Box"""
         return struct.pack(_FEEDBACK_FORMAT,
                            self.running,
-                           self.emergency_brake,
+                           self.brake,
                            self.green_led, self.red_led,
                            self.message_nr,
                            self.esc_min_pwm,
@@ -132,7 +132,7 @@ class MessageFeedback:
         """Parse 32 bytes received from the Arduino into a MessageFeedback object."""
         msg = cls()
         (msg.running,
-        msg.emergency_brake,
+        msg.brake,
         msg.green_led,
         msg.red_led,
         msg.message_nr,
@@ -143,11 +143,26 @@ class MessageFeedback:
 
 
 class ArduinoDriver:
-    '''
-    A simple TCP server for interfacing with an Arduino via Ethernet.
-    Only one client can connect at a time. Runs a background thread that continuously sends the
-    latest commands and receives feedback, automatically re-accepting if the client disconnects.
-    '''
+    """
+    A simple single-client TCP server for interfacing with an Arduino via Ethernet.
+    Sends commands and receives feedback in separate background thread.
+
+    Attributes:
+        host (str): IP address of TCP server (ZED Box's Ethernet interface). Arduino connects to this.
+        port (int): Port number for TCP server (49152 - 65535 recommended)
+        ok (bool): True if connected to arduino and receiving feedback
+        _msg_commands (MessageCommands): Latest commands to Arduino (written by main program via write_msg())
+        _msg_feedback (MessageFeedback): Latest feedback from Arduino (read by main program via read_msg())
+    
+    Usage::
+
+        arduino = ArduinoDriver()
+        arduino.start(host = '192.168.56.1', port = 49152)
+
+        # In main program loop, use thread-safe helpers to read/write:
+        arduino.write_msg(MessageCommands(run=True, steer_angle=90, speed_pwm=150))
+        feedback = arduino.read_msg()
+    """
 
     def __init__(self):
         self.host: str | None = None
@@ -155,15 +170,17 @@ class ArduinoDriver:
         self.refresh_rate: float = 0.0
         self.server_socket = None
         self.client_socket = None
-        self._SOCKET_TIMEOUT = 1.0
         self.client_address = None
         self.is_connected = False
+        self.ok = False # True if connected and receiving feedback
+        
+        self._msg_commands = MessageCommands()
+        self._msg_feedback = MessageFeedback()
+        self._SOCKET_TIMEOUT = 1.0
         self._running = False
-        self.msg_commands = MessageCommands()
-        self.msg_feedback = MessageFeedback()
         self._thread = None
-        self._send_lock = threading.Lock()  # Guards self.msg_commands
-        self._recv_lock = threading.Lock()  # Guards self.msg_feedback
+        self._send_lock = threading.Lock()  # Guards self._msg_commands
+        self._recv_lock = threading.Lock()  # Guards self._msg_feedback
 
 
     def start(self, host='192.168.56.1', port=49152, refresh_rate=50.0,
@@ -205,6 +222,8 @@ class ArduinoDriver:
                     break
                 if not self._receive_feedback():
                     break
+                else:
+                    self.ok = True # Hooray! It's alive!
 
                 if period:
                     elapsed = time.monotonic() - loop_start
@@ -236,10 +255,10 @@ class ArduinoDriver:
     def _send_commands(self):
         """Send the latest commands. Returns False on socket failure."""
         with self._send_lock:
-            self.msg_commands.timestamp = _now_us()
-            self.msg_commands.sent_at = time.monotonic()
-            self.msg_commands.message_nr += 1
-            data = self.msg_commands.packed
+            self._msg_commands.timestamp = _now_us()
+            self._msg_commands.sent_at = time.monotonic()
+            self._msg_commands.message_nr += 1
+            data = self._msg_commands.packed
         try:
             self.client_socket.sendall(data)
             log.debug(f'Bytes sent to {self.client_address}: {data.hex()}')
@@ -260,10 +279,10 @@ class ArduinoDriver:
             log.error(f'Error unpacking feedback: {e}')
             return False
         with self._recv_lock:
-            self.msg_feedback = msg
+            self._msg_feedback = msg
             #
         #log.debug(f'Bytes received from {self.client_address}: {data.hex()}')
-        log.debug(f'Feedback: Run={msg.running:i} | Brake={msg.emergency_brake:i} | Green={msg.green_led:i} | Red={msg.red_led:i}, MsgNr={msg.message_nr}, MinPwm={msg.esc_min_pwm:.0f}, MaxPwm={msg.esc_max_pwm:.0f}, LimitPwm={msg.pwm_speed_limit:.2f}')
+        log.debug(f'Feedback: Run={msg.running:i} | Brake={msg.brake:i} | Green={msg.green_led:i} | Red={msg.red_led:i}, MsgNr={msg.message_nr}, MinPwm={msg.esc_min_pwm:.0f}, MaxPwm={msg.esc_max_pwm:.0f}, LimitPwm={msg.pwm_speed_limit:.2f}')
         return True
 
 
@@ -291,6 +310,7 @@ class ArduinoDriver:
     def _close_client(self):
         """Close the current client connection (server socket stays open)."""
         self.is_connected = False
+        self.ok = False
         if self.client_socket:
             try:
                 self.client_socket.close()
@@ -303,7 +323,7 @@ class ArduinoDriver:
         """Stop the server and close all sockets."""
         
         # Send an "empty" command to force stop ASAP
-        self.msg_commands = MessageCommands() 
+        self._msg_commands = MessageCommands() 
         self._send_commands()
 
         self._running = False # Signals the background thread to stop
@@ -327,11 +347,11 @@ class ArduinoDriver:
     def write_msg(self, msg: MessageCommands):
         """Thread safe helper to set the commands sent to the Arduino."""
         with self._send_lock:
-            self.msg_commands = msg
-            return self.msg_commands
+            self._msg_commands = msg
+            return self._msg_commands
 
 
     def read_msg(self):
         """Thread safe helper to read the latest feedback from the Arduino (or None)."""
         with self._recv_lock:
-            return self.msg_feedback
+            return self._msg_feedback

@@ -232,10 +232,10 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                 start_stop_btn.set_text('Start')
                 start_stop_btn.props('color=green')
 
-            update_status_row(arduino_row,   'Arduino',            orchestrator.arduino_connected, 'apm.drivers.arduino')
-            update_status_row(front_cam_row, 'Front camera',       orchestrator.front_camera_ok,   'apm.drivers.camera.front')
-            update_status_row(back_cam_row,  'Back camera',        orchestrator.back_camera_ok,    'apm.drivers.camera.back')
-            update_status_row(gnss_row,      'GNSS',               orchestrator.gnss_ok,           'apm.drivers.gnss')
+            update_status_row(arduino_row,   'Arduino',         orchestrator.arduino.ok,        'apm.drivers.arduino')
+            update_status_row(front_cam_row, 'Front camera',    orchestrator.front_camera.ok,   'apm.drivers.camera.front')
+            update_status_row(back_cam_row,  'Back camera',     orchestrator.back_camera.ok,    'apm.drivers.camera.back')
+            update_status_row(gnss_row,      'GNSS',            orchestrator.gnss.ok,           'apm.drivers.gnss')
 
             # Show latest log entry from the currently running program mode
             mode_log_row.clear()

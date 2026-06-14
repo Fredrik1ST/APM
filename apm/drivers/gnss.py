@@ -40,49 +40,64 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class GNSSSnapshot: # Simple dataclass to hold the most relevant GNSS data for our use case
-    timestamp: int = 0
-    speed: float = 0.0
-    lon: float = 0.0
-    lat: float = 0.0
-    received_at: float = field(default_factory=time.monotonic)  # Monotonic clock at object creation time (seconds)
+    timestamp_monotonic: float = field(default_factory=time.monotonic)  # Monotonic clock at object creation time (seconds)
+    timestamp_ms: int = 0   # Timestamp from GNSS receiver in milliseconds
+    speed: float = 0.0      # [m/s]
+    lon: float = 0.0,       # [degrees]
+    lat: float = 0.0,       # [degrees]
+    
 
 
 class GNSSDriver:
+    """Driver for ZED-F9P GNSS module via gpsd. 
+    Runs a background thread that continuously reads at a specified rate.
+    Stores thread-safe snapshots of data for the main program.
+    
+    Attributes:
+        measurement_rate_hz (int): The rate at which to poll the GNSS module in Hz. (Max 20 Hz)
+        speed_threshold (float): Minimum speed (m/s) to consider valid (to filter out noise when stationary)
+    """
     def __init__(self):
-        self._stop_event = threading.Event()
-        self.new_data = False
-        self.is_initialized = False
-        self.current_gnss_data = None
-        self.is_initialized_mtx = threading.Lock()
-        self.client = None
-        self.gnss_getter = None
-        self.grab_gnss_data = None
-        self.snapshot: GNSSSnapshot | None = None
-        self.snapshot_lock = threading.Lock()
 
-    def start(self, measurement_rate_hz: int = 10):
+        self.is_initialized = False
+        self.ok = False # True if GNSS data is being successfully received
+        self.measurement_rate_hz = 10
+        self.speed_threshold = 0.07
+        self.snapshot: GNSSSnapshot | None = None
+        
+        self._client = None
+        self._new_data = False
+        self._gnss_getter = None
+        self._grabber_thread = None
+        self._current_gnss_data = None
+        self._stop_event = threading.Event()
+        self._snapshot_lock = threading.Lock()
+        self._is_initialized_mtx = threading.Lock()
+        
+
+    def start(self, measurement_rate_hz: int = 10, speed_threshold: float = 0.07):
         try:
-            self.client = GPSDClient(host="127.0.0.1")
+            self._client = GPSDClient(host="127.0.0.1")
         except Exception:
             log.error("No GPSD running .. exit")
             return -1
 
         self.set_measurement_rate(measurement_rate_hz)
-        self.gnss_getter = self.client.dict_stream(convert_datetime=True, filter=["TPV", "SKY"])
+        self._gnss_getter = self._client.dict_stream(convert_datetime=True, filter=["TPV", "SKY"])
 
         # (Re)start thread for continuously grabbing GNSS data
-        if self.grab_gnss_data is None or not self.grab_gnss_data.is_alive():
+        if self._grabber_thread is None or not self._grabber_thread.is_alive():
             self._stop_event.clear()
-            self.grab_gnss_data = threading.Thread(target=self.grabGNSSData, daemon=True)
-            self.grab_gnss_data.start()
+            self._grabber_thread = threading.Thread(target=self.grabGNSSData, daemon=True)
+            self._grabber_thread.start()
 
         log.info("Successfully connected to GPSD")
         log.info("Waiting for GNSS fix")
-        for gpsd_data in self.gnss_getter:
+        for gpsd_data in self._gnss_getter:
             if gpsd_data.get("class") == "TPV" and gpsd_data.get("mode", 0) >= 2:
                 break
         log.info("GNSS fix found")
-        with self.is_initialized_mtx:
+        with self._is_initialized_mtx:
             self.is_initialized = True
         return 0
 
@@ -104,16 +119,16 @@ class GNSSDriver:
         while not self._stop_event.is_set():
             gpsd_data = None 
             while gpsd_data is None:
-                gpsd_data = next(self.gnss_getter)
+                gpsd_data = next(self._gnss_getter)
             if "class" in gpsd_data and gpsd_data["class"] == "TPV" and "mode" in gpsd_data and gpsd_data["mode"] >=2:                    
-                current_gnss_data = sl.GNSSData()
+                _current_gnss_data = sl.GNSSData()
 
                 if not ("lat" in gpsd_data and "lon" in gpsd_data and "altMSL" in gpsd_data):
                     log.warning("Incomplete TPV message received: missing lat/lon/altMSL")
-                current_gnss_data.set_coordinates(gpsd_data.get("lat", 0.0), gpsd_data.get("lon", 0.0), gpsd_data.get("altMSL", 0.0), False)
-                current_gnss_data.longitude_std =  0.001
-                current_gnss_data.latitude_std = 0.001
-                current_gnss_data.altitude_std = 1.0
+                _current_gnss_data.set_coordinates(gpsd_data.get("lat", 0.0), gpsd_data.get("lon", 0.0), gpsd_data.get("altMSL", 0.0), False)
+                _current_gnss_data.longitude_std =  0.001
+                _current_gnss_data.latitude_std = 0.001
+                _current_gnss_data.altitude_std = 1.0
 
                 gpsd_mode = gpsd_data["mode"]
                 sl_mode = sl.GNSS_MODE.UNKNOWN
@@ -150,8 +165,8 @@ class GNSSDriver:
                     elif gpsd_status == 9:  # STATUS_PPS_FIX
                         sl_status = sl.GNSS_STATUS.SINGLE
 
-                current_gnss_data.gnss_mode = sl_mode.value
-                current_gnss_data.gnss_status = sl_status.value
+                _current_gnss_data.gnss_mode = sl_mode.value
+                _current_gnss_data.gnss_status = sl_status.value
                 
                 position_covariance = [
                     gpsd_data["eph"] * gpsd_data["eph"],
@@ -164,7 +179,7 @@ class GNSSDriver:
                     0.0,
                     gpsd_data["epv"] * gpsd_data["epv"]
                 ]
-                current_gnss_data.position_covariances = position_covariance
+                _current_gnss_data.position_covariances = position_covariance
 
                 # Timestamp is a ISO 8601 time string converted to a datetime object by gpsdclient
                 if not ("time" in gpsd_data):
@@ -174,18 +189,18 @@ class GNSSDriver:
                     timestamp_microseconds = int(timestamp_seconds * 1000000)
                     ts = sl.Timestamp()
                     ts.set_microseconds(timestamp_microseconds)
-                    current_gnss_data.ts = ts
+                    _current_gnss_data.ts = ts
 
                     # Update snapshot for main thread
                     if "speed" in gpsd_data and "lon" in gpsd_data and "lat" in gpsd_data:
-                        with self.snapshot_lock:
+                        with self._snapshot_lock:
                             self.snapshot = GNSSSnapshot(
                                 timestamp = timestamp_microseconds,
                                 speed = gpsd_data["speed"] if "speed" in gpsd_data else 0.0,
                                 lon = gpsd_data["lon"] if "lon" in gpsd_data else 0.0,
                                 lat = gpsd_data["lat"] if "lat" in gpsd_data else 0.0
                             )
-                return current_gnss_data
+                return _current_gnss_data
 
             elif gpsd_data.get("class") == "SKY": # Informational message about satellite status
                 nb_low_snr = sum(
@@ -198,45 +213,46 @@ class GNSSDriver:
             else:
                 log.warning("GNSS fix lost: reconnecting stream")
                 try:
-                    self.gnss_getter = self.client.dict_stream(convert_datetime=True, filter=["TPV", "SKY"])
+                    self._gnss_getter = self._client.dict_stream(convert_datetime=True, filter=["TPV", "SKY"])
                 except Exception:
                     log.error("Failed to reconnect GNSS stream")
 
 
     def grab(self):
-        if self.new_data:
-            self.new_data = False
-            return sl.ERROR_CODE.SUCCESS, self.current_gnss_data
+        if self._new_data:
+            self._new_data = False
+            return sl.ERROR_CODE.SUCCESS, self._current_gnss_data
         return sl.ERROR_CODE.FAILURE, None 
 
 
     def grabGNSSData(self):
         while not self._stop_event.is_set():
-            with self.is_initialized_mtx:
+            with self._is_initialized_mtx:
                 if self.is_initialized:
                     break
             time.sleep(0.001)
 
         while not self._stop_event.is_set():
-            self.current_gnss_data = self.getNextGNSSValue()
-            self.new_data = True
+            self._current_gnss_data = self.getNextGNSSValue()
+            self._new_data = True
 
 
     def get_snapshot(self) -> GNSSSnapshot | None:
         """Get the most recent thread-safe GNSS snapshot for use in the main program"""
-        with self.snapshot_lock:
+        with self._snapshot_lock:
             return self.snapshot
 
 
     def stop(self):
         self._stop_event.set()
-        if self.client:
+        if self._client:
             try:
-                self.client.close()
+                self._client.close()
             except Exception:
                 pass
-        if self.grab_gnss_data and self.grab_gnss_data.is_alive():
-            self.grab_gnss_data.join(timeout=2.0)
-            if self.grab_gnss_data.is_alive():
+        if self._grabber_thread and self._grabber_thread.is_alive():
+            self._grabber_thread.join(timeout=2.0)
+            if self._grabber_thread.is_alive():
                 log.warning("GNSS thread did not stop cleanly within timeout")
+        self.is_initialized = False
         

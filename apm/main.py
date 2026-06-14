@@ -48,22 +48,28 @@ _LOG_DIR = Path(__file__).resolve().parent.parent / 'logs'
 
 def _setup_logging(config) -> None:
     """Write logs to file and console, applying per-module levels from config."""
+
+    # Each run gets its own timestamped log file so runs don't overwrite each other
     _LOG_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     log_file = _LOG_DIR / f'{timestamp}.log'
 
+    # Read logging config; fall back to DEBUG so nothing is silenced by default
     log_cfg = config.get('logging', {})
     root_level = getattr(logging, log_cfg.get('level', 'DEBUG').upper(), logging.DEBUG)
 
+    # basicConfig wires up the root logger once. All loggers in the process inherit this.
     logging.basicConfig(
         level=root_level,
         format='%(asctime)s  %(levelname)-8s  %(name)s  %(message)s',
         handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler(),
+            logging.FileHandler(log_file),   # persists to disk
+            logging.StreamHandler(),          # echoes to terminal
         ],
     )
-    # Apply per-module levels from config
+
+    # Override verbosity for specific modules (e.g. silence a chatty library).
+    # config["logging"]["levels"] is a dict like {"some.module": "WARNING"}
     for module, level_str in log_cfg.get('levels', {}).items():
         level = getattr(logging, level_str.upper(), None)
         if level is not None:

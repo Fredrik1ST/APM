@@ -1,18 +1,7 @@
 '''
-The brain that carries out the main logic of the Autonomous Pacemaker.
+This module provides the APM's Orchestrator class.
 
-Main states:
-- Idle: waiting for user input to start or configure parameters
-- Config: allowing user to set parameters (e.g. pace profile, distance tolerance)
-- Starting: triggered by user, initializing hardware and software components
-- Running: main program loop started
-    - Pace: following pace profile
-    - Dist: maintaining distance to runner
-    - Const: maintaining constant speed
-- Stopping: triggered by user or error, stopping all components
-- Stopped: same as idle, but indicates a successful run has completed
-- Error: if stopped due to error, waiting for user to reset
-
+The Orchestrator is a finite state machine that manages the main program flow and glues its components together.
 '''
 
 import time
@@ -61,6 +50,27 @@ class Mode(IntEnum):
     GNSS_TEST = 300
 
 class Orchestrator:
+    """
+    Finite state machine responsible for main program flow, user interface and component drivers.
+
+    Basic principle:
+        1. Initialized by main.py
+        2. Runs a web interface on local network
+        3. Waits for user input (config / start / stop)
+        4. Run selected program mode until completed or stopped by user
+
+    States: 
+        - Idle: waiting for user input to start or configure parameters
+        - Config: allowing user to set parameters (e.g. pace profile, distance tolerance)
+        - Starting: triggered by user, initializing hardware and software components
+        - Running: running selected program mode
+            - Running_Pace: following pace profile
+            - Running_Dist: maintaining distance to runner
+            - Running_Const: maintaining constant speed
+        - Stopping: exiting mode and stopping all components, triggered by user
+        - Stopped: same as idle, but indicates a successful run has completed
+        - Error: Stopped due to an error
+    """
 
     def __init__(self):
         config.initialize()
@@ -68,29 +78,21 @@ class Orchestrator:
         self.state  = State.IDLE
         self.mode   = Mode.NONE
 
-        # Drivers for hardware components - Handle communication, data retrieval and processing in separate threads
+        # Drivers for hardware components
+        # Handles communication, data retrieval and processing in separate threads
         self.arduino        = ArduinoDriver()
         self.gnss           = GNSSDriver()
-        self.front_camera   = CameraDriver()
-        self.back_camera    = CameraDriver()
+        self.front_camera   = CameraDriver(name="front")
+        self.back_camera    = CameraDriver(name="back")
 
         # Signals and status to/from user interface (e.g. web app)
         self._run_event     = threading.Event()  # set by request_start()
         self._stop_event    = threading.Event()  # set by request_stop()
 
-        self.arduino_connected: bool = False
+        self.arduino_ok: bool = False
         self.front_camera_ok: bool = False
         self.back_camera_ok: bool = False
         self.gnss_ok: bool = False
-
-
-    def _svo_path(self, camera_name: str) -> str | None:
-        """Return a timestamped SVO recording path for the given camera, or None if recording is disabled."""
-        if not self.cfg['camera'][camera_name].get('record'):
-            return None
-        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-        return str(RECORDINGS_DIR / f'{camera_name}_{timestamp}.svo2')
 
 
     # -------------------------------------------------------------------------
@@ -109,7 +111,14 @@ class Orchestrator:
         self._stop_event.set()
 
     def force_start(self, mode: Mode) -> None:
-        '''Force start a specific mode, useful for testing without the web UI.'''
+        '''Force start a specific mode, useful for testing without the web UI.
+        
+        Usage::
+
+            # Create test script or edit main.py to include:
+            from apm.orchestrato import Orchestrator, Mode
+            orchestrator = Orchestrator()
+            orchestrator.force_start(Mode.CAMERA_TEST_BACK)'''
         if self.state != State.IDLE:
             log.warning('Cannot force start while not in IDLE state.')
             return
@@ -152,6 +161,7 @@ class Orchestrator:
     # -------------------------------------------------------------------------
 
     def _do_run(self) -> None:
+        """Start the selected mode. Run until completion or stop signal received."""
         self.state = State.STARTING
         self.cfg = config.load()
         log.info(f'Starting in {self.mode.name} mode')
@@ -179,13 +189,8 @@ class Orchestrator:
 
     def _run_camera_test_back(self) -> None:
         """Start the back camera with body tracking enabled. Log whether a runner is detected and their distance."""
-        self.back_camera.start(
-            serial = self.cfg['camera']['back']['serial_number'],
-            fps = self.cfg['camera']['back']['fps'],
-            body_tracking = True,
-            body_tracking_confidence = self.cfg['camera']['back']['body_tracking']['detection_confidence'],
-            svo_path = self._svo_path('back'),
-        )
+        kwargs = self._camera_kwargs(name='back')
+        self.back_camera.start(kwargs)
         try:
             modes.camera_test_back(self.back_camera, self._stop_event, self.cfg)
         finally:
@@ -194,7 +199,8 @@ class Orchestrator:
 
     def _run_gnss_test(self) -> None:
         """Verify that the GNSS receiver is working + GPSD daemon is running by logging position and speed."""
-        if self.gnss.start() != 0:
+        kwargs = self._gnss_kwargs()
+        if self.gnss.start(kwargs) != 0:
             log.error('GNSS failed to start - aborting test.')
             return
         try:
@@ -205,9 +211,8 @@ class Orchestrator:
 
     def _run_arduino_test(self) -> None:
         """Send commands to the Arduino and verify feedback until user stops the test"""
-        self.arduino.start(
-            host = self.cfg["arduino"]["socket"]["host"],
-            port = self.cfg["arduino"]["socket"]["port"])
+        kwargs = self._arduino_kwargs()
+        self.arduino.start(kwargs)
         try:
             modes.arduino_test(self.arduino, self._stop_event, self.cfg)
         finally:
@@ -220,3 +225,47 @@ class Orchestrator:
         log.info('Orchestrator stopped')
         time.sleep(3)
         self.state = State.IDLE
+
+
+    # -------------------------------------------------------------------------
+    # Helper methods for cleaner code in state machine
+    # -------------------------------------------------------------------------
+
+    def _camera_kwargs(self, name: str) -> dict:
+        """Convert the camera config to keyword arguments for the CameraDriver.start() method"""
+        try:
+            cam_cfg = self.cfg['camera'][name]
+        except KeyError:
+            log.error(f"Config for 'camera.{name}' not found.")
+            raise
+        return {
+            'serial': cam_cfg['serial_number'],
+            'fps': cam_cfg['fps'],
+            'depth_enabled': cam_cfg['depth']['enable'],
+            'body_tracking_enabled': cam_cfg['body_tracking']['enable'],
+            'body_tracking_confidence': cam_cfg['body_tracking']['detection_confidence'],
+            'svo_path': self._svo_path(name) if cam_cfg.get('record') else None
+        }
+
+    def _gnss_kwargs(self) -> dict:
+        """Convert the GNSS config to keyword arguments for the GNSSDriver.start() method"""
+        gnss_cfg = self.cfg['gnss']
+        return {
+            'measurement_rate_hz': gnss_cfg['measurement_rate']
+        }
+
+    def _arduino_kwargs(self) -> dict:
+        """Convert the Arduino config to keyword arguments for the ArduinoDriver.start() method"""
+        arduino_cfg = self.cfg['arduino']
+        return {
+            'host': arduino_cfg['socket']['host'],
+            'port': arduino_cfg['socket']['port'],
+        }
+    
+    def _svo_path(self, camera_name: str) -> str | None:
+        """Return a timestamped SVO recording path for the given camera, or None if recording is disabled."""
+        if not self.cfg['camera'][camera_name].get('record'):
+            return None
+        RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        return str(RECORDINGS_DIR / f'{camera_name}_{timestamp}.svo2')

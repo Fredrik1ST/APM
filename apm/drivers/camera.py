@@ -4,20 +4,8 @@ Driver for a single ZED X stereo camera.
 Based on Stereolabs Python API examples for multithreading and body tracking: 
 https://github.com/stereolabs/zed-python-api
 
-Also includes optional recording of the camera feed to an .SVO file for later review. Based on:
+Includes optional recording of the camera feed to an .SVO file for later review. Based on:
 https://www.stereolabs.com/docs/video/recording
-
-The driver sets up the camera via the ZED SDK and runs a background daemon thread that continously captures frames.
-Body tracking is optional and enabled via the start() call's arguments.
-
-Thread-safety note:
-    The grab loop calls camera.grab() directly — a blocking call that waits up to
-    1/fps seconds for the next frame. No sleep is needed; every frame the camera
-    produces is captured.
-
-    Image data is copied *before* the lock is acquired, so the critical section
-    is only a reference swap. The main thread cannot stall the grab loop regardless
-    of how long it holds the lock while reading a snapshot.
 '''
 
 import numpy as np
@@ -31,25 +19,44 @@ from dataclasses import dataclass, field
 @dataclass
 class DetectedBody:
     id: int
-    position: tuple[float, float, float]  # (x, y, z) in meters; z is forward distance
+    position: tuple[float, float, float]  # (x, y, z) in meters, where z is distance
 
 
 @dataclass
 class CameraSnapshot:
     """Copy of the latest camera frame and detected bodies"""
-    image: np.ndarray           # HxWx4 BGRA left image
-    timestamp_ms: int           # Timestamp from the camera's internal clock
+    timestamp_monotonic: float = field(default_factory=time.monotonic)
+    timestamp_ms: int = 0   # Timestamp from camera in milliseconds
+    image: np.ndarray | None = None     # HxWx4 BGRA left image
+    depth: np.ndarray | None = None     # 
+    timestamp_ms: int                   # Timestamp from the camera's internal clock
     received_at: float = field(default_factory=time.monotonic)  # Monotonic clock at copy time
     bodies: list[DetectedBody] = field(default_factory=list)  # Empty if body tracking is off
-
+    runner_distance: float = -1.0 # Distance to first detected body (-1 if no bodies)
 
 class CameraDriver:
-    '''
+    """
     Driver for a single ZED X stereo camera.
+
+    Sets up the camera via the ZED SDK and runs a background daemon thread that continously captures frames.
+    Frames are stored in thread-safe snapshots that can be retrieved via get_snapshot() in main thread.
+    Body tracking & depth perception is optional and enabled via the start() call's arguments.
+
+    Attributes:
+        ok (bool): True if the camera is capturing
+        serial (int): The camera's serial number (printed on a sticker on the camera)
+        fps (int): Frames per second (15, 30, 60, or 120 for ZED X)
+        coord_units (sl.UNIT): Units for measurements (e.g. sl.UNIT.METER)
+        coord_system (sl.COORDINATE_SYSTEM): Coordinate system for measurements (defaults to sl.COORDINATE_SYSTEM.IMAGE)
+        depth_enabled (bool): Grab depth map aligned to the left image
+        body_tracking_enabled (bool): Track human bodies and return their 3D coordinates
+        body_tracking_confidence (int): Minimum confidence [0-100] to consider a body detection valid
+        svo_path (str | None): If set, record the session to this path
+
 
     Usage:
         cam = CameraDriver()
-        cam.start(serial=42146143, body_tracking=False)
+        cam.start(serial=42146143, body_tracking_enabled=True)
         ...
         snap = cam.get_snapshot()
         if snap:
@@ -57,16 +64,30 @@ class CameraDriver:
             distance = snap.bodies[0].position[2] if snap.bodies else -1
         ...
         cam.stop() # When current program mode has completed
-    '''
+    """
 
     def __init__(self, name: str = "Camera"):
-        self.log = logging.getLogger(f"{__name__}.{name}")
-        self._stop = threading.Event()
+        self.log = logging.getLogger(f"{__name__}.{name}"),
+        self.is_opened = False,
+        self.ok = False # True if camera is successfully capturing frames
+
+        self.serial: int = 0,
+        self.fps: int = 15,
+        self.resolution: sl.RESOLUTION = sl.RESOLUTION.SVGA,
+        self.svo_path: str | None = None, # SVO video recording path
+        self.coord_units: sl.UNIT = sl.UNIT.METER,
+        self.coord_system: sl.COORDINATE_SYSTEM = sl.COORDINATE_SYSTEM.IMAGE,
+        self.depth_enabled: bool = False,
+
+        self.body_tracking_enabled: bool = False,
+        self.body_tracking_confidence: int = 40,
+        self.body_tracking_model: sl.BODY_TRACKING_MODEL = sl.BODY_TRACKING_MODEL.HUMAN_BODY_FAST,
+    
         self._snapshot: CameraSnapshot | None = None
+        self._stop = threading.Event()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
-        self.is_opened = False
-
+        
 
     def start(self,
               serial: int,
@@ -74,8 +95,10 @@ class CameraDriver:
               resolution: sl.RESOLUTION = sl.RESOLUTION.SVGA,
               coord_units: sl.UNIT = sl.UNIT.METER,
               coord_system: sl.COORDINATE_SYSTEM = sl.COORDINATE_SYSTEM.IMAGE,
-              body_tracking: bool = False,
+              body_tracking_enabled: bool = False,
               body_tracking_confidence: int = 40,
+              body_tracking_model: sl.BODY_TRACKING_MODEL = sl.BODY_TRACKING_MODEL.HUMAN_BODY_FAST,
+              depth_enabled: bool = False,
               svo_path: str | None = None,
               ) -> bool:
         '''Open the camera and start the background capture thread. Returns True on success.
@@ -84,98 +107,104 @@ class CameraDriver:
             svo_path: If set, record the session to this .svo2 file using H.265 compression.
         '''
         self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._run,
-            args=(serial, fps, resolution, coord_units, coord_system,
-                  body_tracking, body_tracking_confidence, svo_path),
-            daemon=True,
-        )
+        self._thread = threading.Thread(target=self._run,daemon=True)
         self._thread.start()
         return True
 
 
-    def _run(self, serial, fps, resolution, coord_units, coord_system,
-             body_tracking, body_tracking_confidence, svo_path):
+    def _run(self):
         init_params = sl.InitParameters()
-        init_params.set_from_serial_number(serial)
-        init_params.camera_resolution = resolution
-        init_params.camera_fps = fps
-        init_params.coordinate_units = coord_units
-        init_params.coordinate_system = coord_system
+        init_params.set_from_serial_number(self.serial)
+        init_params.camera_resolution = self.resolution
+        init_params.camera_fps = self.fps
+        init_params.coordinate_units = self.coord_units
+        init_params.coordinate_system = self.coord_system
+        init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE if self.depth_enabled else sl.DEPTH_MODE.NONE
         camera = sl.Camera()
 
         if camera.open(init_params) != sl.ERROR_CODE.SUCCESS:
-            self.log.error(f'Failed to open camera {serial}')
+            self.log.error(f'Failed to open camera {self.serial}')
             return
 
         self.is_opened = True
 
         # Optional recording of camera feed to .SVO file for later review
-        if svo_path:
-            rec_params = sl.RecordingParameters(svo_path, sl.SVO_COMPRESSION_MODE.H265)
+        if self.svo_path:
+            rec_params = sl.RecordingParameters(self.svo_path, sl.SVO_COMPRESSION_MODE.H265)
             err = camera.enable_recording(rec_params)
             if err != sl.ERROR_CODE.SUCCESS:
-                self.log.error(f'Camera {serial}: failed to enable SVO recording to {svo_path}: {err}')
+                self.log.error(f'Camera {self.serial}: failed to enable SVO recording to {self.svo_path}: {err}')
                 camera.close()
                 self.is_opened = False
                 self._stop.set()
                 return
-            self.log.info(f'Camera {serial}: recording to {svo_path}')
+            self.log.info(f'Camera {self.serial}: recording to {self.svo_path}')
 
+        # Set up body tracking if enabled
         body_runtime_params = None
-        if body_tracking:
+        if self.body_tracking_enabled:
             body_params = sl.BodyTrackingParameters()
             body_params.enable_tracking = True
             body_params.enable_body_fitting = False # Optimize joint position
-            body_params.detection_model = sl.BODY_TRACKING_MODEL.HUMAN_BODY_FAST
+            body_params.detection_model = self.body_tracking_model
+            body_params.body_selection = self.body_tracking_confidence
+            body_params.body_format = sl.BODY_FORMAT.BODY_18 # Simplest skeleton 
 
             pos_tracking = sl.PositionalTrackingParameters() # Necessary for body tracking
-            pos_tracking.set_floor_as_origin = True
+            # pos_tracking.set_floor_as_origin = True # Not sure if needed
             camera.enable_positional_tracking(pos_tracking)
 
-            self.log.info(f'Camera {serial}: loading body tracking module...')
+            self.log.info(f'Camera {self.serial}: loading body tracking module...')
             err = camera.enable_body_tracking(body_params)
             if err != sl.ERROR_CODE.SUCCESS:
-                self.log.error(f'Camera {serial}: failed to enable body tracking: {err}')
+                self.log.error(f'Camera {self.serial}: failed to enable body tracking: {err}')
                 camera.close()
                 self.is_opened = False
                 self._stop.set()
                 return
 
             body_runtime_params = sl.BodyTrackingRuntimeParameters()
-            body_runtime_params.detection_confidence_threshold = body_tracking_confidence
+            body_runtime_params.detection_confidence_threshold = self.body_tracking_confidence
 
         runtime = sl.RuntimeParameters()
         image = sl.Mat()
-        bodies = sl.Bodies() if body_tracking else None
-        self.log.info(f'Camera {serial} started (body_tracking={body_tracking})')
+        depth = sl.Mat() if self.depth_enabled else None
+        bodies = sl.Bodies() if self.body_tracking_enabled else None
+        self.log.info(f'Camera {self.serial} started (body_tracking_enabled={self.body_tracking_enabled})')
 
         while not self._stop.is_set():
             if camera.grab(runtime) == sl.ERROR_CODE.SUCCESS:
                 camera.retrieve_image(image, sl.VIEW.LEFT)
+                if self.depth_enabled:
+                    camera.retrieve_depth(depth, sl.MEASURE.DEPTH)
 
-                # Copy image data before taking lock so the critical section is just a reference swap
-                frame = image.get_data().copy()
+                # Copy image / depth data to NumPy arrays before lock
+                image_np = image.get_data().copy()
+                depth_np = depth.get_data().copy() if self.depth_enabled else None
                 ts_ms = camera.get_timestamp(sl.TIME_REFERENCE.IMAGE).get_milliseconds()
 
                 detected_bodies: list[DetectedBody] = []
-                if body_tracking:
+                if self.body_tracking_enabled:
                     camera.retrieve_bodies(bodies, body_runtime_params)
                     detected_bodies = [
-                        DetectedBody(id=b.id, position=tuple(b.position[:3]))
-                        for b in bodies.body_list
+                        DetectedBody(id=b.id, position=tuple(b.position[:3])) for b in bodies.body_list
                     ]
 
                 with self._lock:
-                    self._snapshot = CameraSnapshot(image=frame, timestamp_ms=ts_ms, bodies=detected_bodies)
+                    self._snapshot = CameraSnapshot(
+                        timestamp_ms = ts_ms, 
+                        image = image_np,
+                        depth = depth_np,
+                        bodies = detected_bodies,
+                        runner_distance = detected_bodies[0].position[2] if detected_bodies else -1.0)
 
-        if body_tracking:
+        if self.body_tracking_enabled:
             camera.disable_body_tracking()
-        if svo_path:
+        if self.svo_path:
             camera.disable_recording()
         camera.close()
         self.is_opened = False
-        self.log.info(f'Camera {serial} closed')
+        self.log.info(f'Camera {self.serial} closed')
 
 
     def get_snapshot(self) -> CameraSnapshot | None:

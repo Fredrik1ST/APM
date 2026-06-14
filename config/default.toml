@@ -1,4 +1,6 @@
-# --- Logging --------------------------------------------------
+# ============================================================== 
+# Logging
+# ==============================================================
 
 [logging]
 # Levels: DEBUG < INFO < WARNING < ERROR < CRITICAL
@@ -21,45 +23,44 @@ level = "DEBUG"     # Default root logger level = level of any logger without a 
 "apm.vision.frame_encoder" = "WARNING"
 "apm.vision.line_detector" = "WARNING"
 
-
-# --- Constant speed mode --------------------------------------
-[constant_speed]
-
-# --- Cameras --------------------------------------------------
+# ============================================================== 
+# Cameras
+# ==============================================================
 
 [camera.front]
-fps = 15                    
+fps = 15                    # 15, 30, 60, 120
 resolution = "SVGA"         # SVGA = 960x600 [pixels]
 serial_number = 42146143    # 2.2mm big lens
 record = false              # Save SVO video recordings to disk (at logs/recordings/front_YYYYMMDD_HHMMSS.svo)
 display = false             # Convert frames to JPEG and stream to web app
 
+[camera.front.depth]
+enable = false              # Enable depth perception
+
 [camera.front.body_tracking]
 enable = false
-detection_confidence = 40
-detection_model = "HUMAN_BODY_FAST"
+detection_confidence = 40                  
+#detection_model = "HUMAN_BODY_FAST"     # FAST, MEDIUM, ACCURATE
 
-[camera.front.lane_keeping]
-cut_top = 0.571              # fraction of image height to crop (4/7)
-angle_threshold = 50         # [degrees]
-angle_setpoint = 90          # starting angle [deg] (0 = left, 90 = straight, 180 = right)
-position_setpoint = 363      # pixels
-set_width = 640              # pixels
-show_lines = false           # Draw lane lines on the video stream (for display / debugging)
 
 [camera.back]
-fps = 15
+fps = 15                    # 15, 30, 60, 120
 resolution = "SVGA"         # SVGA = 960x600 [pixels]
 serial_number = 40329509    # 4mm small lens
 record = false              # Save SVO video recordings to disk (at logs/recordings/back_YYYYMMDD_HHMMSS.svo)
 display = false             # Convert frames to JPEG and stream to web app
-         
+
+[camera.back.depth]
+enable = false              # Enable depth perception
+
 [camera.back.body_tracking]
 enable = true
 detection_confidence = 40
-detection_model = "HUMAN_BODY_FAST"
+#detection_model = "HUMAN_BODY_FAST"    # FAST, MEDIUM, ACCURATE
 
-# --- Vision processing ----------------------------------------
+# ============================================================== 
+# Vision processing
+# ==============================================================
 
 [frame_encoding]
 jpeg_quality = 80       # 0-100 (higher = better)
@@ -73,7 +74,17 @@ mask_polygon = [[330, 172], [340, 399], [591, 399], [444, 172]] # Polygon to mas
 cut_top = 0.571         # fraction of image height to crop (4/7)
 output_width = 640      # pixels to resize width to before lane detection (height is scaled proportionally)
 
-# --- Control parameters ---------------------------------------
+# ============================================================== 
+# Control parameters
+# ==============================================================
+
+[lane_keeping]
+cut_top = 0.571              # fraction of image height to crop (4/7)
+angle_threshold = 50         # [degrees]
+angle_setpoint = 90          # starting angle [deg] (0 = left, 90 = straight, 180 = right)
+position_setpoint = 363      # pixels
+set_width = 640              # pixels
+show_lines = false           # Draw lane lines on the video stream (for display / debugging)
 
 [cruise_control]
 k_acceleration = 1.5         # sigmoid steepness
@@ -93,9 +104,6 @@ kd = 0.06
 gamma = 0.1
 beta = 1.0
 
-[lane_keeping]
-
-
 # Velocity profile parameters
 [velocity_profile.linear]
 t_accel = 4.0               # [seconds] Time to reach target speed during linear acceleration
@@ -107,12 +115,11 @@ alpha = 0.7                 # Higher alpha = faster acceleration
 k = 2.0                     # Steepness: higher = faster transition through the middle
 s = 3.0                     # Inflection point: time at which the transition is at its midpoint
 
-# PID
+# PID parameters)
 [pid.motor]
-kp = 80.0
+kp = 80.0                   # 80
 ki = 1251.0
 kd = 0.0
-
 
 [pid.lane_angle]
 kp = 0.9
@@ -124,26 +131,30 @@ kp = 0.03
 ki = 0.0
 kd = 0.03
 
-
-# --- GNSS -----------------------------------------------------
+# ============================================================== 
+# GNSS
+# ==============================================================
 
 [gnss]
-device = "/dev/ttyACM0"
+#device = "/dev/ttyACM0"
+#baud_rate = 115200
 measurement_rate = 10       # [Hz]
-baud_rate = 115200
-speed_threshold = 0.07      # m/s — minimum speed to count distance
+speed_threshold = 0.07      # m/s — minimum speed threshold to consider valid (to filter out noise when stationary)
 
+# ============================================================== 
+# Arduino
+# ============================================================== 
 
-# Arduino (TCP socket and PWM values)
 [arduino.socket]
-host = "192.168.56.1"
-port = 49152
+host = "192.168.56.1"       # IP address of APM's LAN interface
+port = 49152                # Port number of APM's TCP server
 
 [arduino.steer_angle]
 neutral = 90
 max_right = 45 # Max
 max_left = 135 # Max
 
-[arduino.speed_pwm]
+# Fallback affine speed model (v_hat = v_d * factor + neutral)
+[arduino.speed_pwm] 
 neutral = 1540
 factor = 20.23 # Linear model to convert desired speed (m/s) to PWM (microsecond pulse width)
