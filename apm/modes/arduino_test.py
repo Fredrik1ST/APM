@@ -21,6 +21,7 @@ import tomlkit
 from apm.drivers.arduino import ArduinoDriver, MessageCommands, blink
 from apm.control.velocity_profiles import LinearRamp, ExponentialRamp, SigmoidRamp
 from apm.speed_models.models import AffineSpeedModel as SpeedModel
+from apm.telemetry import TelemetryLogger
 
 log = logging.getLogger(__name__)
 
@@ -57,66 +58,69 @@ def arduino_test(arduino: ArduinoDriver, stop_event: threading.Event,
         f'speed_limit={fb.pwm_speed_limit:.0f}'
     )
 
+    # Capture per-tick command/feedback samples for offline round-trip analysis.
+    with TelemetryLogger('arduino_test') as tlm:
 
-    # Phase 1 - LED blink
-    log.info('--- Phase 1: LED test (3 s) ---')
-    if stop_event.is_set():
-        return
-    _run_phase(arduino, stop_event, duration=3.0,
-               run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm,
-               blink_leds=True)
-
-
-    # Phase 2 - Steering
-    log.info('--- Phase 2: Steering test ---')
-    if stop_event.is_set():
-        return
-    for label, angle in [
-        ('right',   angle_right),
-        ('neutral', angle_neutral),
-        ('left',    angle_left),
-        ('neutral', angle_neutral),
-    ]:
-        log.info(f'  Steering {label} ({angle:.0f}°)')
-        _run_phase(arduino, stop_event, duration=2.0,
-                   run=True, steer_angle=angle, speed_pwm=neutral_speed_pwm)
+        # Phase 1 - LED blink
+        log.info('--- Phase 1: LED test (3 s) ---')
+        if stop_event.is_set():
+            return
+        _run_phase(arduino, stop_event, duration=3.0, phase='led',
+                   run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm,
+                   blink_leds=True, tlm=tlm)
 
 
-    # Phase 3 - Motor
-    log.info('--- Phase 3: Motor test - ensure car is elevated or has space! ---')
-    log.info(f'  Spinning at {SPEED_1} m/s...')
-    _run_phase(arduino, stop_event, duration=8.0,
-               run=True, steer_angle=angle_neutral,
-               speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_1, _TICK)))
-
-    log.info(f'  Spinning at {SPEED_2} m/s...')
-    _run_phase(arduino, stop_event, duration=8.0,
-               run=True, steer_angle=angle_neutral,
-               speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_2, _TICK)))
-
-    log.info(f'  Spinning at {SPEED_3} m/s...')
-    _run_phase(arduino, stop_event, duration=5.0,
-               run=True, steer_angle=angle_neutral,
-               speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_3, _TICK)))
-
-    if stop_event.is_set():
-        return
+        # Phase 2 - Steering
+        log.info('--- Phase 2: Steering test ---')
+        if stop_event.is_set():
+            return
+        for label, angle in [
+            ('right',   angle_right),
+            ('neutral', angle_neutral),
+            ('left',    angle_left),
+            ('neutral', angle_neutral),
+        ]:
+            log.info(f'  Steering {label} ({angle:.0f}°)')
+            _run_phase(arduino, stop_event, duration=2.0, phase=f'steer_{label}',
+                       run=True, steer_angle=angle, speed_pwm=neutral_speed_pwm, tlm=tlm)
 
 
-    # Phase 4 - Brake test
-    log.info('--- Phase 4: Brake test ---')
-    _run_phase(arduino, stop_event, duration=4.0,
-               run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm, brake=blink(period=2))
+        # Phase 3 - Motor
+        log.info('--- Phase 3: Motor test - ensure car is elevated or has space! ---')
+        log.info(f'  Spinning at {SPEED_1} m/s...')
+        _run_phase(arduino, stop_event, duration=8.0, phase='motor_1',
+                   run=True, steer_angle=angle_neutral,
+                   speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_1, _TICK)), tlm=tlm)
 
-    if stop_event.is_set():
-        return
+        log.info(f'  Spinning at {SPEED_2} m/s...')
+        _run_phase(arduino, stop_event, duration=8.0, phase='motor_2',
+                   run=True, steer_angle=angle_neutral,
+                   speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_2, _TICK)), tlm=tlm)
+
+        log.info(f'  Spinning at {SPEED_3} m/s...')
+        _run_phase(arduino, stop_event, duration=5.0, phase='motor_0',
+                   run=True, steer_angle=angle_neutral,
+                   speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_3, _TICK)), tlm=tlm)
+
+        if stop_event.is_set():
+            return
 
 
-    log.info('Stopping motor...')
-    _run_phase(arduino, stop_event, duration=1.0,
-               run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm)
+        # Phase 4 - Brake test
+        log.info('--- Phase 4: Brake test ---')
+        _run_phase(arduino, stop_event, duration=4.0, phase='brake',
+                   run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm,
+                   brake=blink(period=2), tlm=tlm)
 
-    log.info('Arduino test complete.')
+        if stop_event.is_set():
+            return
+
+
+        log.info('Stopping motor...')
+        _run_phase(arduino, stop_event, duration=1.0, phase='stop',
+                   run=False, steer_angle=angle_neutral, speed_pwm=neutral_speed_pwm, tlm=tlm)
+
+        log.info('Arduino test complete.')
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +144,14 @@ def _wait_for_connection(arduino: ArduinoDriver, stop_event: threading.Event,
 def _run_phase(arduino: ArduinoDriver, stop_event: threading.Event,
                duration: float, run: bool, steer_angle: float,
                speed_pwm: float | Callable[[], float],
-               blink_leds: bool = False, brake: bool = False) -> None:
+               blink_leds: bool = False, brake: bool = False,
+               phase: str = '', tlm: TelemetryLogger | None = None) -> None:
     """Run a phase for `duration` seconds. `speed_pwm` may be a fixed float or a callable
-    evaluated each tick (use a callable to advance a ramp or other dynamic setpoint)."""
+    evaluated each tick (use a callable to advance a ramp or other dynamic setpoint).
+
+    If `tlm` is given, one row is recorded to the 'arduino' stream every tick so the
+    command stream and feedback message numbers can be analyzed offline (loss / stalls).
+    """
     deadline = time.monotonic() + duration
     last_log  = 0.0
 
@@ -158,12 +167,25 @@ def _run_phase(arduino: ArduinoDriver, stop_event: threading.Event,
             msg.red_led   = blink(period=1.0, offset=0.5)
 
         arduino.write_msg(msg)
+        fb = arduino.read_msg()
+
+        if tlm is not None:
+            tlm.log('arduino', {
+                'phase':       phase,
+                'cmd_run':     msg.run,
+                'cmd_brake':   msg.brake,
+                'steer_angle': round(msg.steer_angle, 2),
+                'speed_pwm':   round(msg.speed_pwm, 1),
+                'fb_msg_nr':   fb.message_nr,
+                'fb_running':  fb.running,
+                'fb_brake':    fb.brake,
+                'fb_ts_mono':  round(fb.timestamp_monotonic, 6),
+            })
 
         now = time.monotonic()
         if now - last_log >= _LOG_INTERVAL:
-            fb = arduino.read_msg()
             log.info(
-                f'  Feedback | run={fb.running} brake={fb.emergency_brake} '
+                f'  Feedback | run={fb.running} brake={fb.brake} '
                 f'speed_pwm={msg.speed_pwm:.0f} '
                 f'green={fb.green_led} red={fb.red_led} msg_nr={fb.message_nr}'
             )
