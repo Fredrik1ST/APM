@@ -35,6 +35,8 @@ from dataclasses import dataclass, field
 import subprocess
 import logging
 
+from apm.telemetry import TelemetryLogger
+
 log = logging.getLogger(__name__)
 
 
@@ -42,10 +44,10 @@ log = logging.getLogger(__name__)
 class GNSSSnapshot: # Simple dataclass to hold the most relevant GNSS data for our use case
     timestamp_monotonic: float = field(default_factory=time.monotonic)  # Monotonic clock at object creation time (seconds)
     timestamp_ms: int = 0   # Timestamp from GNSS receiver in milliseconds
-    speed: float = 0.0      # [m/s]
-    lon: float = 0.0,       # [degrees]
-    lat: float = 0.0,       # [degrees]
-    
+    speed: float = 0.0      # [m/s] Doppler-derived ground speed
+    lon: float = 0.0        # [degrees]
+    lat: float = 0.0        # [degrees]
+
 
 
 class GNSSDriver:
@@ -73,7 +75,12 @@ class GNSSDriver:
         self._stop_event = threading.Event()
         self._snapshot_lock = threading.Lock()
         self._is_initialized_mtx = threading.Lock()
-        
+
+        # Optional telemetry sink. When set, every new fix is logged to the 'gnss' stream.
+        # Assignment of the reference is atomic under the GIL, so the grabber thread can read
+        # it without a lock; TelemetryLogger.log() is itself thread-safe and close-safe.
+        self._telemetry: TelemetryLogger | None = None
+
 
     def start(self, measurement_rate_hz: int = 10, speed_threshold: float = 0.07):
         try:
@@ -205,13 +212,15 @@ class GNSSDriver:
 
                     # Update snapshot for main thread
                     if "speed" in gpsd_data and "lon" in gpsd_data and "lat" in gpsd_data:
+                        snapshot = GNSSSnapshot(
+                            timestamp_ms = int(timestamp_seconds * 1000),
+                            speed = gpsd_data["speed"],
+                            lon = gpsd_data["lon"],
+                            lat = gpsd_data["lat"],
+                        )
                         with self._snapshot_lock:
-                            self.snapshot = GNSSSnapshot(
-                                timestamp = timestamp_microseconds,
-                                speed = gpsd_data["speed"] if "speed" in gpsd_data else 0.0,
-                                lon = gpsd_data["lon"] if "lon" in gpsd_data else 0.0,
-                                lat = gpsd_data["lat"] if "lat" in gpsd_data else 0.0
-                            )
+                            self.snapshot = snapshot
+                        self._log_fix(snapshot, gpsd_data)
                 return _current_gnss_data
 
             elif gpsd_data.get("class") == "SKY": # Informational message about satellite status
@@ -253,6 +262,35 @@ class GNSSDriver:
         """Get the most recent thread-safe GNSS snapshot for use in the main program"""
         with self._snapshot_lock:
             return self.snapshot
+
+
+    def set_telemetry(self, telemetry: TelemetryLogger | None) -> None:
+        """Attach (or detach with None) a telemetry sink. While attached, every new fix is
+        written to the 'gnss' stream as it arrives, capturing the true update rate."""
+        self._telemetry = telemetry
+
+
+    def _log_fix(self, snap: GNSSSnapshot, gpsd_data: dict) -> None:
+        """Record one fix to telemetry (called from the grabber thread, once per new fix).
+
+        Speed (Doppler) and lat/lon are the core fields for comparison against the speed
+        model estimate offline; mode/status/eph/epv support the accuracy and 10-vs-15 Hz
+        analyses. Streams are aligned later on the auto-added t_mono column.
+        """
+        tlm = self._telemetry  # local copy; may be set to None concurrently
+        if tlm is None:
+            return
+        tlm.log('gnss', {
+            'gnss_ts_ms':  snap.timestamp_ms,
+            'speed':       snap.speed,
+            'lat':         snap.lat,
+            'lon':         snap.lon,
+            'mode':        gpsd_data.get('mode'),
+            'status':      gpsd_data.get('status'),
+            'eph':         gpsd_data.get('eph'),
+            'epv':         gpsd_data.get('epv'),
+            'rate_hz':     self.measurement_rate_hz,
+        })
 
 
     def stop(self):

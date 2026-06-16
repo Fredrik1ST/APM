@@ -38,7 +38,10 @@ Main control loop:
 
 '''
 
+import argparse
 import logging
+import socket
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -80,16 +83,56 @@ def _setup_logging(config) -> None:
     logging.info(f'Logging to {log_file}')
 
 
-if __name__ == '__main__':
+def _parse_args() -> argparse.Namespace:
+    """Parse CLI args. argparse handles --help by printing usage and exiting,
+    so `python -m apm --help` no longer falls through and boots the app."""
+    parser = argparse.ArgumentParser(
+        prog='apm',
+        description='Autonomous Pacemaker - paces a runner on a track via an RC car '
+                    'and a web UI on http://<host>:<port>.',
+    )
+    parser.add_argument('--host', default=None,
+                        help='Web UI bind address (overrides [webapp].host in config).')
+    parser.add_argument('--port', type=int, default=None,
+                        help='Web UI port (overrides [webapp].port in config).')
+    return parser.parse_args()
+
+
+def _check_port_free(host: str, port: int) -> bool:
+    """Return True if (host, port) can be bound, so we can fail fast with a clear
+    message instead of a raw bind traceback from the web server thread."""
+    probe_host = '0.0.0.0' if host in ('', '0.0.0.0') else host
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((probe_host, port))
+            return True
+        except OSError:
+            return False
+
+
+def main() -> None:
+    args = _parse_args()
     config_handler.initialize()
     cfg = config_handler.load()
     _setup_logging(cfg)
+
+    host = args.host if args.host is not None else cfg['webapp']['host']
+    port = args.port if args.port is not None else int(cfg['webapp']['port'])
+
+    if not _check_port_free(host, port):
+        logging.error(f'Web UI port {host}:{port} is already in use - is another APM instance running? '
+                      f'Stop it (or pass --port) and try again.')
+        sys.exit(1)
 
     # The Orchestrator manages the main control loop, modes, and hardware communication
     orchestrator = Orchestrator()
 
     # The web app runs in a separate thread and allows the user to start/stop, select modes, and adjust config params
-    start_webapp(orchestrator, host=cfg['webapp']['host'], port=cfg['webapp']['port'])
-    
+    start_webapp(orchestrator, host=host, port=port)
+
     # Point of no return. Time to start the main loop and run the APM!
     orchestrator.run()
+
+
+if __name__ == '__main__':
+    main()

@@ -8,7 +8,7 @@ Forked from the 2024 NTNU master's thesis ["Development of an Autonomous Rabbit 
 - **ZED Box Orin NX 16GB** - runs the control logic, GNSS, and ZED SDK vision processing
 - **2× ZED X stereo cameras** - front camera for lane detection/steering, back camera for runner tracking
 - **Arrma Infraction 6S RC car** - ESC for main motor, steering servo, brake servo
-- **Arduino** — controls ESC and servos via PWM over an Ethernet connection to the ZED Box
+- **Arduino** - controls ESC and servos via PWM over an Ethernet connection to the ZED Box
 
 ## Software dependencies
 
@@ -32,8 +32,8 @@ The web app starts on port `8080`. Open `http://<device-ip>:8080` to configure a
 
 Settings can be found in `config/`:
 
-- `default.toml` — baseline config (camera serials, PID gains, Arduino IP/port, etc.)
-- `settings.toml` — local overrides; edit this file rather than `default.toml`
+- `default.toml` - baseline config (camera serials, PID gains, Arduino IP/port, etc.)
+- `settings.toml` - local overrides; edit this file rather than `default.toml`
 
 Key things to check before a first run:
 

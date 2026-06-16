@@ -40,6 +40,14 @@ class LaneKeeper:
         self.angle_pid = angle_pid
         self.position_pid = position_pid
 
+        # Last-computed intermediates, exposed for telemetry (refreshed each update()).
+        self.last_heading = 0.0
+        self.last_x_center = 0.0
+        self.last_image_center = 0.0
+        self.last_angle_correction = 0.0
+        self.last_position_correction = 0.0
+        self.last_steering = 90.0
+
     def update(self, lane_lines: LaneLines, image_width: int) -> float:
         """Calculate a steering angle from the detected lane lines.
 
@@ -68,4 +76,12 @@ class LaneKeeper:
         steering = angle_correction + position_correction + 90.0
         logger.debug("heading=%.1f°  x_center=%.1f  angle_corr=%.2f  pos_corr=%.2f  steering=%.1f°",
                      heading, x_center, angle_correction, position_correction, steering)
+
+        # Expose intermediates for telemetry / tuning.
+        self.last_heading = heading
+        self.last_x_center = x_center
+        self.last_image_center = image_center
+        self.last_angle_correction = angle_correction
+        self.last_position_correction = position_correction
+        self.last_steering = steering
         return steering

@@ -15,6 +15,8 @@ import time
 import pyzed.sl as sl
 from dataclasses import dataclass, field
 
+from apm.telemetry import TelemetryLogger
+
 
 @dataclass
 class DetectedBody:
@@ -25,12 +27,11 @@ class DetectedBody:
 @dataclass
 class CameraSnapshot:
     """Copy of the latest camera frame and detected bodies"""
-    timestamp_monotonic: float = field(default_factory=time.monotonic)
-    timestamp_ms: int = 0   # Timestamp from camera in milliseconds
+    timestamp_monotonic: float = field(default_factory=time.monotonic)  # Monotonic clock at copy time [s]
+    timestamp_ms: int = 0               # Timestamp from the camera's internal clock [ms]
+    seq: int = 0                        # Frame counter, increments per successful grab (gaps => dropped)
     image: np.ndarray | None = None     # HxWx4 BGRA left image
-    depth: np.ndarray | None = None     # 
-    timestamp_ms: int                   # Timestamp from the camera's internal clock
-    received_at: float = field(default_factory=time.monotonic)  # Monotonic clock at copy time
+    depth: np.ndarray | None = None     # HxW depth map [m], or None if depth disabled
     bodies: list[DetectedBody] = field(default_factory=list)  # Empty if body tracking is off
     runner_distance: float = -1.0 # Distance to first detected body (-1 if no bodies)
 
@@ -67,9 +68,13 @@ class CameraDriver:
     """
 
     def __init__(self, name: str = "Camera"):
+        self.name = name
         self.log = logging.getLogger(f"{__name__}.{name}")
         self.is_opened = False
         self.ok = False # True if camera is successfully capturing frames
+
+        self.frame_seq = 0      # Successful grabs so far (read by modes to measure achieved FPS)
+        self.grab_failures = 0  # Cumulative non-SUCCESS grabs
 
         self.serial: int = 0
         self.fps: int = 15
@@ -87,6 +92,11 @@ class CameraDriver:
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
+
+        # Optional telemetry sink. When set, every successful grab is logged to the
+        # 'camera_<name>' stream. Reference assignment is atomic under the GIL, so the
+        # capture thread reads it without a lock; TelemetryLogger.log() is thread/close-safe.
+        self._telemetry = None
         
 
     def start(self,
@@ -106,6 +116,22 @@ class CameraDriver:
         Args:
             svo_path: If set, record the session to this .svo2 file using H.265 compression.
         '''
+        # Store the requested configuration so _run() actually uses it (otherwise the camera
+        # would open with the __init__ defaults - serial 0, 15 fps - ignoring the config).
+        self.serial = serial
+        self.fps = fps
+        self.resolution = resolution
+        self.coord_units = coord_units
+        self.coord_system = coord_system
+        self.body_tracking_enabled = body_tracking_enabled
+        self.body_tracking_confidence = body_tracking_confidence
+        self.body_tracking_model = body_tracking_model
+        self.depth_enabled = depth_enabled
+        self.svo_path = svo_path
+
+        self.frame_seq = 0
+        self.grab_failures = 0
+
         self._stop.clear()
         self._thread = threading.Thread(target=self._run,daemon=True)
         self._thread.start()
@@ -173,8 +199,13 @@ class CameraDriver:
         bodies = sl.Bodies() if self.body_tracking_enabled else None
         self.log.info(f'Camera {self.serial} started (body_tracking_enabled={self.body_tracking_enabled})')
 
+        prev_grab_mono: float | None = None  # monotonic time of the previous successful grab
+        prev_cam_ts_ms: int | None = None    # camera clock of the previous frame
+
         while not self._stop.is_set():
-            if camera.grab(runtime) == sl.ERROR_CODE.SUCCESS:
+            grab_status = camera.grab(runtime)
+            if grab_status == sl.ERROR_CODE.SUCCESS:
+                grab_mono = time.monotonic()
                 camera.retrieve_image(image, sl.VIEW.LEFT)
                 if self.depth_enabled:
                     camera.retrieve_depth(depth, sl.MEASURE.DEPTH)
@@ -191,13 +222,40 @@ class CameraDriver:
                         DetectedBody(id=b.id, position=tuple(b.position[:3])) for b in bodies.body_list
                     ]
 
+                self.frame_seq += 1
+                self.ok = True
                 with self._lock:
                     self._snapshot = CameraSnapshot(
-                        timestamp_ms = ts_ms, 
+                        timestamp_ms = ts_ms,
+                        seq = self.frame_seq,
                         image = image_np,
                         depth = depth_np,
                         bodies = detected_bodies,
                         runner_distance = detected_bodies[0].position[2] if detected_bodies else -1.0)
+
+                # Per-frame timing telemetry. dt_grab is our loop cadence (-> achieved FPS);
+                # dt_cam is the camera-clock interval (a jump of ~2x the frame period means the
+                # SDK dropped a frame before we grabbed it); proc is our post-grab processing cost.
+                if self._telemetry is not None:
+                    self._log_frame(
+                        grab_status='SUCCESS',
+                        ts_ms=ts_ms,
+                        dt_grab_ms=(grab_mono - prev_grab_mono) * 1e3 if prev_grab_mono is not None else None,
+                        dt_cam_ms=(ts_ms - prev_cam_ts_ms) if prev_cam_ts_ms is not None else None,
+                        proc_ms=(time.monotonic() - grab_mono) * 1e3,
+                        n_bodies=len(detected_bodies),
+                    )
+                prev_grab_mono = grab_mono
+                prev_cam_ts_ms = ts_ms
+            else:
+                # grab() failed (e.g. CAMERA_NOT_DETECTED, no new frame yet). Count it and
+                # avoid a tight busy-loop hammering the SDK on persistent failure.
+                self.grab_failures += 1
+                if self.grab_failures % 100 == 1:
+                    self.log.warning(f'Camera {self.serial}: grab failed ({grab_status}), total failures={self.grab_failures}')
+                if self._telemetry is not None:
+                    self._log_frame(grab_status=str(grab_status))
+                self._stop.wait(0.002)
 
         if self.body_tracking_enabled:
             camera.disable_body_tracking()
@@ -205,6 +263,7 @@ class CameraDriver:
             camera.disable_recording()
         camera.close()
         self.is_opened = False
+        self.ok = False
         self.log.info(f'Camera {self.serial} closed')
 
 
@@ -212,6 +271,39 @@ class CameraDriver:
         '''Return the latest camera snapshot, or None if no frame has been captured yet.'''
         with self._lock:
             return self._snapshot
+
+
+    def set_telemetry(self, telemetry: "TelemetryLogger | None") -> None:
+        '''Attach (or detach with None) a telemetry sink. While attached, every successful grab
+        is recorded to the 'camera_<name>' stream so the achieved frame rate and dropped frames
+        can be analyzed offline.'''
+        self._telemetry = telemetry
+
+
+    def _log_frame(self, grab_status, ts_ms=None, dt_grab_ms=None, dt_cam_ms=None,
+                   proc_ms=None, n_bodies=None) -> None:
+        '''Record one grab attempt to telemetry (called from the capture thread).
+
+        Both successful frames and failed grabs share this single schema so the
+        'camera_<name>' stream has a stable header regardless of which occurs first.
+        dt_grab_ms is the loop cadence (-> achieved FPS); dt_cam_ms is the camera-clock
+        interval (a jump of ~2x the frame period means the SDK dropped a frame before we
+        grabbed it); proc_ms is the post-grab processing cost.
+        '''
+        tlm = self._telemetry  # local copy; may be set to None concurrently
+        if tlm is None:
+            return
+        tlm.log(f'camera_{self.name}', {
+            'seq':           self.frame_seq,
+            'grab_status':   grab_status,
+            'cam_ts_ms':     ts_ms,
+            'dt_grab_ms':    round(dt_grab_ms, 3) if dt_grab_ms is not None else None,
+            'dt_cam_ms':     dt_cam_ms,
+            'proc_ms':       round(proc_ms, 3) if proc_ms is not None else None,
+            'n_bodies':      n_bodies,
+            'grab_failures': self.grab_failures,
+            'target_fps':    self.fps,
+        })
 
 
     def stop(self):

@@ -60,8 +60,8 @@ output_width = 640      # pixels to resize width to before lane detection (heigh
 
 # Feedforward speed model parameters for converting desired speed (m/s) to PWM (microsecond pulse width)
 [speed_model]
-gain = 20.23        # m/s to PWM factor for default affine speed model
-bias = 1540         # Neutral PWM value for 0 m/s
+gain = 20.23                # m/s to PWM factor for default affine speed model
+bias = 1540                 # Neutral PWM value for 0 m/s (seems to be a deadband around 1500-1600)
 coefficients = [20.23, 1540] # Coefficients for polynomial speed model (starting with highest degree)
 
 [lane_keeping]
@@ -89,6 +89,8 @@ gamma = 1.0
 [distance_control]
 d_min = 2.0                 # [meters]
 d_max = 6.0                 # [meters]
+runner_lost_timeout = 0.5   # [s] Keep running through body-tracking dropouts shorter than this (run-signal debounce)
+runner_acquire_time = 0.0   # [s] Require the runner to be seen this long before starting (0 = start immediately)
 
 [distance_control.pid]
 kp = 0.3
@@ -97,6 +99,28 @@ kd = 0.06
 beta = 1.0                  # Setpoint weighting for proportional term
 gamma = 0.1                 # Setpoint weighting for derivative term
 
+# Open-loop constant speed mode: hold a target speed via the speed model + velocity profile.
+[constant_speed]
+target_speed = 1.0            # [m/s] Target speed to hold
+target_duration = 1.0         # [s] 
+profile = "linear"            # Velocity profile for smooth acceleration: linear | exponential | sigmoid (params in [velocity_profile.*])
+
+# Closed-loop cruise controller (see apm/control/cruise_controller.py): feedforward speed model
+# + PI trim on the PWM, with GNSS speed fused through a complementary filter. The constant-speed-
+# closed test mode reuses [constant_speed].target_speed/profile and forces the outer loop off (k_s=0).
+[cruise_control]
+pacing_profile = "test.csv"   # selected schedule CSV in pacing_profiles/ (set from the web app)
+k_s = 0.05          # [1/s] outer-loop gain: speed correction per metre of schedule error (unused at constant speed)
+cf_tau = 1.0        # [s] complementary filter time constant (larger = trust dead reckoning longer between GNSS fixes)
+pwm_min = 1540      # actuator lower bound [pwm] (neutral - no reverse)
+pwm_max = 1560      # actuator upper bound [pwm] (real safety values should be hardcoded in the Arduino)
+
+[cruise_control.pid]
+kp = 30.0           # [pwm per m/s] proportional trim on speed error (needs field tuning)
+ki = 10.0           # [pwm per m/s/s] integral trim (eliminates steady-state speed error)
+kd = 0.0
+beta = 1.0
+gamma = 1.0
 
 # Velocity profile parameters
 [velocity_profile.linear]
@@ -139,9 +163,10 @@ max_right = 45 # Max
 max_left = 135 # Max
 
 # Fallback affine speed model (v_hat = v_d * factor + neutral)
-[arduino.speed_pwm] 
-neutral = 1540
-factor = 20.23 # Linear model to convert desired speed (m/s) to PWM (microsecond pulse width)
+[arduino.speed_pwm]
+max = 1600                  # Maximum PWM for safety (there's also hardcoded limits in the Arduino code)
+neutral = 1540              # Neutral PWM value for 0 m/s
+factor = 20.23              # Fallback linear model to convert desired speed (m/s) to PWM (microsecond pulse width)
 
 # ============================================================== 
 # NiceGUI web app

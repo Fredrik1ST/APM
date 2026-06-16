@@ -47,11 +47,6 @@ _COMMANDS_FORMAT = '<4?12xIff4x'
 _FEEDBACK_FORMAT = '<4?12xIfff'
 
 
-def _now_us():
-    """Microseconds since epoch."""
-    return int(time.time_ns() / 1000)
-
-
 def blink(period=2, duty_cycle=0.5, offset = 0):
     """Blinking function that flips between returning True and False based on parameters. Can be used for e.g. LEDs.
 
@@ -142,6 +137,22 @@ class MessageFeedback:
         return msg
 
 
+@dataclass
+class LinkStats:
+    """Thread-safe snapshot of TCP link health for telemetry / diagnostics.
+
+    The send/receive loop is strictly synchronous (one command sent, then exactly one
+    feedback awaited), so each feedback pairs naturally with the command that preceded it
+    and `rtt_s` is the round-trip latency of that cycle. `sent_nr` / `fb_nr` are the command
+    and feedback message numbers; a stalled or skipping `fb_nr` indicates lost feedback.
+    """
+    timestamp_monotonic: float = field(default_factory=time.monotonic)
+    sent_nr: int = 0        # message_nr of the most recently sent command
+    fb_nr: int = 0          # message_nr of the most recently received feedback
+    rtt_s: float = 0.0      # round-trip latency of the most recent send -> feedback cycle [s]
+    connected: bool = False
+
+
 class ArduinoDriver:
     """
     A simple single-client TCP server for interfacing with an Arduino via Ethernet.
@@ -153,6 +164,7 @@ class ArduinoDriver:
         ok (bool): True if connected to arduino and receiving feedback
         _msg_commands (MessageCommands): Latest commands to Arduino (written by main program via write_msg())
         _msg_feedback (MessageFeedback): Latest feedback from Arduino (read by main program via read_msg())
+        _link_stats (LinkStats): Latest link health snapshot (read by main program via get_link_stats())
     
     Usage::
 
@@ -180,7 +192,13 @@ class ArduinoDriver:
         self._running = False
         self._thread = None
         self._send_lock = threading.Lock()  # Guards self._msg_commands
-        self._recv_lock = threading.Lock()  # Guards self._msg_feedback
+        self._recv_lock = threading.Lock()  # Guards self._msg_feedback and self._link_stats
+
+        # Round-trip latency bookkeeping. Written and read only by the _serve thread
+        # (send completes before receive begins), so no lock is needed between the two.
+        self._t_send_mono: float | None = None  # monotonic time the latest command hit the wire
+        self._last_sent_nr: int = 0             # message_nr of that command
+        self._link_stats = LinkStats()          # published snapshot, guarded by _recv_lock
 
 
     def start(self, host='192.168.56.1', port=49152, refresh_rate=50.0,
@@ -255,12 +273,14 @@ class ArduinoDriver:
     def _send_commands(self):
         """Send the latest commands. Returns False on socket failure."""
         with self._send_lock:
-            self._msg_commands.timestamp = _now_us()
-            self._msg_commands.sent_at = time.monotonic()
             self._msg_commands.message_nr += 1
+            self._msg_commands.timestamp_monotonic = time.monotonic()
+            sent_nr = self._msg_commands.message_nr
             data = self._msg_commands.packed
         try:
+            self._t_send_mono = time.monotonic()  # stamp as close to the wire as possible
             self.client_socket.sendall(data)
+            self._last_sent_nr = sent_nr
             log.debug(f'Bytes sent to {self.client_address}: {data.hex()}')
             return True
         except socket.error as e:
@@ -273,16 +293,25 @@ class ArduinoDriver:
         data = self._receive_exact(MESSAGE_SIZE)
         if data is None:
             return False
+        recv_mono = time.monotonic()
         try:
             msg = MessageFeedback.from_bytes(data)
         except struct.error as e:
             log.error(f'Error unpacking feedback: {e}')
             return False
+
+        # Pair this feedback with the command that preceded it to get round-trip latency.
+        rtt_s = recv_mono - self._t_send_mono if self._t_send_mono is not None else 0.0
         with self._recv_lock:
             self._msg_feedback = msg
-            #
-        #log.debug(f'Bytes received from {self.client_address}: {data.hex()}')
-        log.debug(f'Feedback: Run={msg.running:i} | Brake={msg.brake:i} | Green={msg.green_led:i} | Red={msg.red_led:i}, MsgNr={msg.message_nr}, MinPwm={msg.esc_min_pwm:.0f}, MaxPwm={msg.esc_max_pwm:.0f}, LimitPwm={msg.pwm_speed_limit:.2f}')
+            self._link_stats = LinkStats(
+                timestamp_monotonic=recv_mono,
+                sent_nr=self._last_sent_nr,
+                fb_nr=msg.message_nr,
+                rtt_s=rtt_s,
+                connected=True,
+            )
+        log.debug(f'Feedback: Run={int(msg.running)} | Brake={int(msg.brake)} | Green={int(msg.green_led)} | Red={int(msg.red_led)}, MsgNr={msg.message_nr}, RTT={rtt_s*1e3:.2f}ms, MinPwm={msg.esc_min_pwm:.0f}, MaxPwm={msg.esc_max_pwm:.0f}, LimitPwm={msg.pwm_speed_limit:.2f}')
         return True
 
 
@@ -355,3 +384,13 @@ class ArduinoDriver:
         """Thread safe helper to read the latest feedback from the Arduino (or None)."""
         with self._recv_lock:
             return self._msg_feedback
+
+
+    def get_link_stats(self) -> LinkStats:
+        """Thread-safe snapshot of link health (round-trip latency, message numbers).
+
+        Use for telemetry: sample once per loop tick. RTT is the latency of the most recent
+        send->feedback cycle; a flat `fb_nr` between samples means no new feedback arrived.
+        """
+        with self._recv_lock:
+            return self._link_stats

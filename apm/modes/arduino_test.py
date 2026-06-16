@@ -170,16 +170,18 @@ def _run_phase(arduino: ArduinoDriver, stop_event: threading.Event,
         fb = arduino.read_msg()
 
         if tlm is not None:
+            link = arduino.get_link_stats()
             tlm.log('arduino', {
                 'phase':       phase,
                 'cmd_run':     msg.run,
                 'cmd_brake':   msg.brake,
                 'steer_angle': round(msg.steer_angle, 2),
                 'speed_pwm':   round(msg.speed_pwm, 1),
-                'fb_msg_nr':   fb.message_nr,
+                'sent_nr':     link.sent_nr,
+                'fb_nr':       link.fb_nr,
+                'rtt_ms':      round(link.rtt_s * 1e3, 3),
                 'fb_running':  fb.running,
                 'fb_brake':    fb.brake,
-                'fb_ts_mono':  round(fb.timestamp_monotonic, 6),
             })
 
         now = time.monotonic()

@@ -204,9 +204,9 @@ class TestCannyWithMask:
 # ---------------------------------------------------------------------------
 
 def test_lane_images_directory_not_empty():
-    '''Fail early if no test images are present — add images or tune detection.'''
+    '''Fail early if no test images are present - add images or tune detection.'''
     assert LANE_IMAGES, (
-        f'No images found in {FRONTCAM_DIR} — '
+        f'No images found in {FRONTCAM_DIR} - '
         'add .png/.jpg files to run lane detection integration tests'
     )
 
@@ -281,8 +281,8 @@ class TestDetectWithPreprocess:
         img = _load(filename)
         resized = self.detector.resize_image(img)
         lanes = self.detector.detect(resized)
-        # We don't assert lanes is not None here — resized crops out much of the scene
-        # and the default mask may not fit every image — but no exception should be raised.
+        # We don't assert lanes is not None here - resized crops out much of the scene
+        # and the default mask may not fit every image - but no exception should be raised.
         if lanes is not None:
             assert math.isfinite(lanes.left_slope)
             assert math.isfinite(lanes.right_slope)
@@ -325,7 +325,7 @@ class TestDetectEdgeCases:
         '''Horizontal lines fall outside the angle_threshold and should not be detected as lanes.'''
         detector = LaneDetector(mask_polygons=None, hough_threshold=10)
         img = np.zeros((480, 640, 3), dtype=np.uint8)
-        # Draw two strong horizontal lines — angle ≈ 90°, outside the ±60° from vertical threshold
+        # Draw two strong horizontal lines - angle ≈ 90°, outside the ±60° from vertical threshold
         cv2.line(img, (0, 200), (639, 200), (255, 255, 255), 3)
         cv2.line(img, (0, 300), (639, 300), (255, 255, 255), 3)
         result = detector.detect(img)

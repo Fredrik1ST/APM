@@ -43,6 +43,7 @@ class Mode(IntEnum):
     PACE_ONLY = 2
     DISTANCE_ONLY = 3
     CONSTANT_SPEED = 4
+    CONSTANT_SPEED_CLOSED = 5
     CAMERA_TEST = 100
     CAMERA_TEST_FRONT = 101
     CAMERA_TEST_BACK = 102
@@ -174,9 +175,11 @@ class Orchestrator:
             case Mode.DISTANCE_ONLY:
                 self._run_distance_only()
             case Mode.CONSTANT_SPEED:
-                pass # TODO
+                self._run_constant_speed()
+            case Mode.CONSTANT_SPEED_CLOSED:
+                self._run_constant_speed_closed()
             case Mode.CAMERA_TEST:
-                pass # TODO
+                self._run_camera_test()
             case Mode.CAMERA_TEST_FRONT:
                 self._run_camera_test_front()
             case Mode.CAMERA_TEST_BACK:
@@ -201,6 +204,20 @@ class Orchestrator:
             self.state = State.STOPPING
             self.back_camera.stop()
             self.arduino.stop()
+
+
+    def _run_camera_test(self) -> None:
+        """Start both cameras and run the front + back camera tests concurrently to gauge
+        performance with both cameras (and both vision workloads) active at once."""
+        self.front_camera.start(**self._camera_kwargs(name='front'))
+        self.back_camera.start(**self._camera_kwargs(name='back'))
+        try:
+            modes.camera_test(self.front_camera, self.back_camera, self._stop_event,
+                              lambda img: setattr(self, 'front_image', img), self.cfg)
+        finally:
+            self.state = State.STOPPING
+            self.front_camera.stop()
+            self.back_camera.stop()
 
 
     def _run_camera_test_front(self) -> None:
@@ -249,6 +266,40 @@ class Orchestrator:
             self.state = State.STOPPING
             self.arduino.stop()
 
+
+    def _run_constant_speed(self) -> None:
+        """Open-loop constant speed: hold a target speed via the speed model + velocity profile.
+
+        GNSS is started too (best effort) so measured ground speed is logged alongside the motor speed/pwm.
+        This data can be used for speed-model calibration."""
+        self.arduino.start(**self._arduino_kwargs())
+        gnss_ok = self.gnss.start(**self._gnss_kwargs())
+        if not gnss_ok:
+            log.warning('GNSS unavailable - running constant speed without speed measurement.')
+        try:
+            modes.constant_speed(self.arduino, self._stop_event, self.cfg,
+                                 gnss=self.gnss if gnss_ok else None)
+        finally:
+            self.state = State.STOPPING
+            self.arduino.stop()
+            if gnss_ok:
+                self.gnss.stop()
+
+
+    def _run_constant_speed_closed(self) -> None:
+        """Closed-loop constant speed: hold a target speed with the CruiseController inner loop
+        (feedforward + PI trim + complementary filter on GNSS). GNSS is required for feedback."""
+        gnss_ok = self.gnss.start(**self._gnss_kwargs())
+        if not gnss_ok:
+            log.error('GNSS failed to start - aborting closed-loop constant speed (needs speed feedback).')
+            return
+        self.arduino.start(**self._arduino_kwargs())
+        try:
+            modes.constant_speed_closed(self.arduino, self.gnss, self._stop_event, self.cfg)
+        finally:
+            self.state = State.STOPPING
+            self.arduino.stop()
+            self.gnss.stop()
 
     def _run_lane_keeper_test(self) -> None:
         """Test the Lane Keeper controller without any speed control for tuning / debugging."""

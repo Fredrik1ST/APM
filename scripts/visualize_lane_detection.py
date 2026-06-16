@@ -2,9 +2,9 @@
 """Visualize lane detection pipeline step-by-step.
 
 Saves (or displays) three images per input:
-  1. <stem>_1_resized.jpg   — after crop + resize
-  2. <stem>_2_canny.jpg     — Canny edges with mask applied
-  3. <stem>_3_detected.jpg  — lane lines and heading arrow drawn on the resized image
+  1. <stem>_1_resized.jpg   - after crop + resize
+  2. <stem>_2_canny.jpg     - Canny edges with mask applied
+  3. <stem>_3_detected.jpg  - lane lines and heading arrow drawn on the resized image
 
 Mask polygons are read from config/settings.toml (falls back to config/default.toml).
 
@@ -78,7 +78,7 @@ def run_pipeline(image_bgr: np.ndarray, detector: LaneDetector) -> tuple[np.ndar
     return (
         label(resized,   f"1 resized  {resized.shape[1]}x{resized.shape[0]}"),
         label(canny_bgr, f"2 canny+mask  {status}"),
-        label(annotated, f"3 detected  hdg={heading:.1f} deg" if heading is not None else "3 detected  —"),
+        label(annotated, f"3 detected  hdg={heading:.1f} deg" if heading is not None else "3 detected  -"),
     )
 
 
@@ -94,7 +94,7 @@ def display_steps(name: str, steps: tuple[np.ndarray, np.ndarray, np.ndarray]) -
     """Show each step in sequence. Returns True to continue, False to quit."""
     labels = ["resized", "canny+mask", "detected"]
     for img, lbl in zip(steps, labels):
-        title = f"{name} — {lbl}  (any key: next | q: quit)"
+        title = f"{name} - {lbl}  (any key: next | q: quit)"
         cv2.imshow(title, img)
         key = cv2.waitKey(0) & 0xFF
         cv2.destroyAllWindows()

@@ -15,7 +15,7 @@ class PIDController:
         gamma: Setpoint weighting for derivative term (0.0 - 1.0)
     """
     
-    def __init__(self, kp = 0.0, ki = 0.0, kd = 0.0, beta = 1.0, gamma = 1.0, enable_dt = False):
+    def __init__(self, kp = 0.0, ki = 0.0, kd = 0.0, beta = 1.0, gamma = 1.0, enable_dt = True):
         self.kp = kp
         self.ki = ki
         self.kd = kd
@@ -26,6 +26,13 @@ class PIDController:
         self.previous_update_time = 0.0
         self.enable_dt = enable_dt
         self.last_update_time = 0.0
+
+        # Last-computed terms, exposed for telemetry / tuning (refreshed each update()).
+        self.error = 0.0
+        self.p = 0.0
+        self.i = 0.0
+        self.d = 0.0
+        self.output = 0.0
 
     def update(self, setpoint: float, current_value: float):
         '''Calculate a new PID control output.
@@ -55,4 +62,7 @@ class PIDController:
 
         output = P + I + D
         self.previous_error = d_error # Store the derivative error!
+
+        # Expose the breakdown for telemetry (error here is the unweighted tracking error).
+        self.error, self.p, self.i, self.d, self.output = error, P, I, D, output
         return output
