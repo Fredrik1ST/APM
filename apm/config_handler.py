@@ -24,23 +24,23 @@ def initialize() -> None:
 
 def read_text() -> str:
     """Read the user-editable settings file."""
-    return SETTINGS_PATH.read_text()
+    return SETTINGS_PATH.read_text(encoding="utf-8")
 
 
 def write_text(text: str) -> None:
     """Write and validate settings file."""
     tomlkit.loads(text)  # validate before writing
-    SETTINGS_PATH.write_text(text)
+    SETTINGS_PATH.write_text(text, encoding="utf-8")
 
 
 def load() -> tomlkit.TOMLDocument:
     """Load user settings."""
-    return tomlkit.loads(SETTINGS_PATH.read_text())
+    return tomlkit.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
 
 
 def save(config: tomlkit.TOMLDocument) -> None:
     """Write modified settings back to file."""
-    SETTINGS_PATH.write_text(tomlkit.dumps(config))
+    SETTINGS_PATH.write_text(tomlkit.dumps(config), encoding="utf-8")
 
 
 def reset_to_defaults() -> None:
