@@ -7,7 +7,7 @@ Designed to run on a ZED Box Orin NX with front and rear-mounted ZED X stereo ca
 - apm.drivers       - hardware interfaces (Arduino, GNSS, ZED X Cameras)
 - apm.vision        - lane detection and runner tracking
 - apm.control       - speed and lane regulation (cruise control, distance keeping, lane keeping)
-- apm.calibration   - plots and generates control models based on sampled data
+- apm.speed_model   - plots and generates control models based on sampled data
 - apm.modes         - selectable run modes' logic (normal, debug, hardware tests)
 - apm.webapp        - local NiceGUI web interface for configuration, start/stop and monitoring
 - apm.orchestrator  - top-level state machine tying it all together

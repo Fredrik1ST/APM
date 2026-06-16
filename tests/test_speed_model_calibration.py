@@ -8,7 +8,8 @@ Run with:
 '''
 
 import pytest
-from apm.calibration import SpeedModelCalibrator
+from pathlib import Path
+from apm.speed_models import SpeedModelCalibrator
 
 
 @pytest.fixture
@@ -20,8 +21,11 @@ def plot(request):
 def calibrator():
     path = SpeedModelCalibrator.DEFAULT_PATH
     if not path.exists():
-        pytest.skip(f'No calibration data found at {path}')
-    return SpeedModelCalibrator.load()
+        path = Path('tests/input/csv/calibration.csv')
+    if not path.exists():
+        pytest.skip(f'No calibration data found at {SpeedModelCalibrator.DEFAULT_PATH} or tests/input/csv/')
+    return SpeedModelCalibrator.load(path)
+
 
 
 def test_load(calibrator):
@@ -29,10 +33,11 @@ def test_load(calibrator):
     print(f'\n  Loaded {len(calibrator.samples)} samples')
 
 
-def test_fit(calibrator):
+def test_fit_affine(calibrator):
     factor, neutral_pwm = calibrator.fit()
     print(f'\n  factor={factor:.4f}, neutral_pwm={neutral_pwm:.2f}')
     assert factor > 0, 'Fitted factor should be positive'
+
 
 
 def test_plot(calibrator, plot):

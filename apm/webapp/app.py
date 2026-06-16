@@ -9,10 +9,12 @@ Started as a daemon thread by Orchestrator.run().
 
 import threading
 import logging
-from nicegui import ui
+from nicegui import ui, app as nicegui_app
+from fastapi.responses import Response
 
 import apm.config_handler as config
 from apm.orchestrator import Orchestrator, State, Mode
+from apm.vision.frame_encoder import encode_jpeg
 
 log = logging.getLogger(__name__)
 
@@ -64,24 +66,13 @@ MODE_LABELS: dict[Mode, str] = {
     Mode.CAMERA_TEST:       'Camera test (both)',
     Mode.CAMERA_TEST_FRONT: 'Camera test (front)',
     Mode.CAMERA_TEST_BACK:  'Camera test (back)',
+    Mode.GNSS_TEST:         'GNSS test',
     Mode.ARDUINO_TEST:      'Arduino test',
+    Mode.LANE_KEEPER_TEST:  'Lane keeper test'
 }
 
 _ACTIVE_STATES = {State.STARTING, State.RUNNING, State.RUNNING_PACE,
                   State.RUNNING_DIST, State.RUNNING_CONST, State.STOPPING}
-
-
-#MODE_LOGGERS: dict[Mode, str] = {
-#    Mode.NORMAL:       'apm.modes.normal',
-#    Mode.PACE_ONLY:    'apm.modes.pace_only',
-#    Mode.DISTANCE_ONLY:'apm.modes.distance_only',
-#    Mode.CONSTANT_SPEED:'apm.modes.constant_speed',
-#    Mode.CAMERA_TEST:  'apm.modes.camera_test',
-#    Mode.CAMERA_TEST_FRONT: 'apm.modes.camera_test_front',
-#    Mode.CAMERA_TEST_BACK:  'apm.modes.camera_test_back',
-#    Mode.ARDUINO_TEST: 'apm.modes.arduino_test',
-#    Mode.GNSS_TEST:    'apm.modes.gnss_test'
-#}
 
 
 # ---------------------------------------------------------------------------
@@ -101,9 +92,9 @@ def _build_config_editor() -> tuple[dict, list]:
                 )
                 render_section(keys, value)
             else:
-                with ui.row().classes('items-center gap-3 w-full'):
-                    ui.label(key).classes('text-sm w-40 shrink-0 font-mono')
-                    inp = ui.input(value=str(value)).classes('grow font-mono text-sm')
+                with ui.row().classes('items-start gap-3 w-full'):
+                    ui.label(key).classes('text-sm w-40 shrink-0 font-mono break-all')
+                    inp = ui.input(value=str(value)).classes('grow min-w-0 font-mono text-sm')
                     inp.on('input', lambda el=inp: el.props('color=amber'))
                     inputs.append((keys, inp))
 
@@ -129,7 +120,8 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
             state_badge = ui.badge('IDLE', color='grey').classes('text-sm px-3 py-1')
 
         # --- main grid ----------------------------------------------------
-        with ui.grid(columns=2).classes('w-full gap-4 p-4'):
+        # grid-cols-1 on narrow screens (mobile), 2 columns from 768px up (md:)
+        with ui.element('div').classes('w-full gap-4 p-4 grid grid-cols-1 md:grid-cols-2'):
 
             # control card
             with ui.card().classes('col-span-1'):
@@ -164,8 +156,29 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                 ui.separator().classes('my-2')
                 mode_log_row  = ui.row().classes('items-start gap-2 w-full')
 
+        # --- camera feeds -------------------------------------------------
+        def _camera_card(label: str, src: str):
+            with ui.card().classes('col-span-1'):
+                ui.label(label).classes('text-lg font-semibold mb-2')
+                img = ui.image(src).classes('w-full rounded')
+                placeholder = (
+                    ui.element('div')
+                    .classes('w-full rounded flex items-center justify-center bg-gray-800 text-gray-500 text-sm')
+                    .style('aspect-ratio: 16/9')
+                )
+                with placeholder:
+                    ui.icon('videocam_off', size='sm').classes('mr-1')
+                    ui.label('No signal')
+                placeholder.set_visibility(False)
+            return img, placeholder
+
+        with ui.element('div').classes('w-full gap-4 px-4 grid grid-cols-1 md:grid-cols-2'):
+            front_img, front_placeholder = _camera_card('Front camera', '/camera/front')
+            back_img,  back_placeholder  = _camera_card('Back camera',  '/camera/back')
+
         # --- config editor ------------------------------------------------
-        with ui.card().classes('w-full mx-4 mb-4'):
+        # mx-4 matches the grid padding; w-full omitted to avoid overflow (margins are outside 100%)
+        with ui.card().classes('mx-4 mb-4 self-stretch'):
             with ui.expansion('Configuration', icon='settings').classes('w-full'):
                 with ui.row().classes('mb-3'):
                     def save_config() -> None:
@@ -195,7 +208,8 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                         nonlocal doc, inputs
                         config.reset_to_defaults()
                         config_col.clear()
-                        doc, inputs = _build_config_editor()
+                        with config_col:
+                            doc, inputs = _build_config_editor()
                         ui.notify('Reset to defaults', type='warning', position='bottom-right')
 
                     ui.button('Save', icon='save', color='green', on_click=save_config)
@@ -218,7 +232,20 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                     ui.label(record.getMessage()).classes(f'text-xs font-mono {color} truncate')
 
         # --- periodic refresh ---------------------------------------------
+        _refresh_counter = [0]
+
         def refresh_ui() -> None:
+            _refresh_counter[0] += 1
+            t = _refresh_counter[0]
+            for img, placeholder, ok, path in (
+                (front_img, front_placeholder, orchestrator.front_camera.ok, 'front'),
+                (back_img,  back_placeholder,  orchestrator.back_camera.ok,  'back'),
+            ):
+                img.set_visibility(ok)
+                placeholder.set_visibility(not ok)
+                if ok:
+                    img.set_source(f'/camera/{path}?t={t}')
+
             s = orchestrator.state
             state_badge.set_text(s.name)
             state_badge.props(f'color={STATE_COLORS.get(s, "grey")}')
@@ -252,7 +279,37 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
 
 
 # ---------------------------------------------------------------------------
-# Public API — called by Orchestrator
+# Camera image routes
+# ---------------------------------------------------------------------------
+
+def _register_camera_routes(orchestrator: Orchestrator) -> None:
+    _JPEG_HEADERS = {'Cache-Control': 'no-store'}
+
+    def _encode(image):
+        cfg = orchestrator.cfg.get('webapp', {})
+        return encode_jpeg(image, quality=cfg.get('jpeg_quality', 80), scale=cfg.get('jpeg_scale', 0.5))
+
+    @nicegui_app.get('/camera/front')
+    def camera_front():
+        if orchestrator.front_image:
+            return Response(orchestrator.front_image, media_type='image/jpeg', headers=_JPEG_HEADERS)
+        snap = orchestrator.front_camera.get_snapshot()
+        if snap is None or snap.image is None:
+            return Response(status_code=204)
+        return Response(_encode(snap.image), media_type='image/jpeg', headers=_JPEG_HEADERS)
+
+    @nicegui_app.get('/camera/back')
+    def camera_back():
+        if orchestrator.back_image:
+            return Response(orchestrator.back_image, media_type='image/jpeg', headers=_JPEG_HEADERS)
+        snap = orchestrator.back_camera.get_snapshot()
+        if snap is None or snap.image is None:
+            return Response(status_code=204)
+        return Response(_encode(snap.image), media_type='image/jpeg', headers=_JPEG_HEADERS)
+
+
+# ---------------------------------------------------------------------------
+# Public API - called by Orchestrator
 # ---------------------------------------------------------------------------
 
 def start(orchestrator: Orchestrator, host: str = '0.0.0.0', port: int = 8080) -> None:
@@ -260,6 +317,7 @@ def start(orchestrator: Orchestrator, host: str = '0.0.0.0', port: int = 8080) -
     log_handler = _LastLogHandler()
     log_handler.setLevel(logging.DEBUG)
     logging.getLogger().addHandler(log_handler)
+    _register_camera_routes(orchestrator)
     _register_page(orchestrator, log_handler)
     thread = threading.Thread(
         target=ui.run,

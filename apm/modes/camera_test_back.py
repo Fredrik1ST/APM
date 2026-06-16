@@ -21,17 +21,8 @@ log = logging.getLogger(__name__)
 _LOG_INTERVAL = 1.0  # How often to print a detection status reading [s]
 
 
-def camera_test_back_mode(camera: CameraDriver, stop_event: threading.Event,
+def camera_test_back(camera: CameraDriver, stop_event: threading.Event,
                           cfg: tomlkit.TOMLDocument) -> None:
-    
-    back_cfg = cfg['camera']['back']
-    serial = back_cfg['serial_number']
-    fps = back_cfg['fps']
-    confidence = back_cfg['body_tracking']['detection_confidence']
-
-    log.info('Starting back camera with body tracking. Press Stop to exit.')
-    camera.start(serial=serial, fps=fps, body_tracking=True,
-                 body_tracking_confidence=confidence)
 
     last_log_time = 0.0
     runner_present = False  # Tracks whether a runner was detected in the previous frame
@@ -64,7 +55,6 @@ def camera_test_back_mode(camera: CameraDriver, stop_event: threading.Event,
             jpg = encode_jpeg(snap.image, quality=80, scale=1.0)
             cv2.imshow('Back Camera', snap.image)
 
-        stop_event.wait(1 / fps) # Sleep until next frame is expected or stop event is set
+        stop_event.wait(1 / camera.fps) # Sleep until next frame is expected or stop event is set
 
-    camera.stop()
     log.info('Back camera test complete.')

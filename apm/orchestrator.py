@@ -172,7 +172,7 @@ class Orchestrator:
             case Mode.PACE_ONLY:
                 pass # TODO
             case Mode.DISTANCE_ONLY:
-                pass # TODO
+                self._run_distance_only()
             case Mode.CONSTANT_SPEED:
                 pass # TODO
             case Mode.CAMERA_TEST:
@@ -189,15 +189,29 @@ class Orchestrator:
                 self._run_lane_keeper_test()
 
 
+    def _run_distance_only(self) -> None:
+        """Start the back camera and Arduino, then run the distance controller in a closed loop."""
+        cam_kwargs = self._camera_kwargs(name='back')
+        self.back_camera.start(**cam_kwargs)
+        arduino_kwargs = self._arduino_kwargs()
+        self.arduino.start(**arduino_kwargs)
+        try:
+            modes.distance_only(self.back_camera, self.arduino, self._stop_event, self.cfg)
+        finally:
+            self.state = State.STOPPING
+            self.back_camera.stop()
+            self.arduino.stop()
+
+
     def _run_camera_test_front(self) -> None:
         """Start the front camera with lane detection enabled. Log detected lanes and get a sense of accuracy"""
         kwargs = self._camera_kwargs(name='front')
         self.front_camera.start(**kwargs)
         try:
-            modes.camera_test_front(self.front_camera, self._stop_event, self.cfg,
-                                        lambda img: setattr(self, 'front_image', img))
+            modes.camera_test_front(self.front_camera, self._stop_event,
+                                        lambda img: setattr(self, 'front_image', img), self.cfg)
         finally:
-            self.mode = Mode.STOPPING
+            self.state = State.STOPPING
             self.front_camera.stop()
 
 
@@ -208,20 +222,20 @@ class Orchestrator:
         try:
             modes.camera_test_back(self.back_camera, self._stop_event, self.cfg)
         finally:
-            self.mode = Mode.STOPPING
+            self.state = State.STOPPING
             self.back_camera.stop()
 
 
     def _run_gnss_test(self) -> None:
         """Verify that the GNSS receiver is working + GPSD daemon is running by logging position and speed."""
         kwargs = self._gnss_kwargs()
-        if self.gnss.start(**kwargs) != 0:
+        if not self.gnss.start(**kwargs):
             log.error('GNSS failed to start - aborting test.')
             return
         try:
             modes.gnss_test(self.gnss, self._stop_event, self.cfg)
         finally:
-            self.mode = Mode.STOPPING
+            self.state = State.STOPPING
             self.gnss.stop()
 
 
@@ -232,7 +246,7 @@ class Orchestrator:
         try:
             modes.arduino_test(self.arduino, self._stop_event, self.cfg)
         finally:
-            self.mode = Mode.STOPPING
+            self.state = State.STOPPING
             self.arduino.stop()
 
 
@@ -240,13 +254,12 @@ class Orchestrator:
         """Test the Lane Keeper controller without any speed control for tuning / debugging."""
         cam_kwargs = self._camera_kwargs(name='front')
         self.front_camera.start(**cam_kwargs)
-
         arduino_kwargs = self._arduino_kwargs()
-        self.arduino.start(arduino_kwargs)
+        self.arduino.start(**arduino_kwargs)
         try:
             modes.lane_keeper_test(self.front_camera, self.arduino, self._stop_event, self.cfg, self.front_image)
         finally:
-            self.mode = Mode.STOPPING
+            self.state = State.STOPPING
             self.front_camera.stop()
             self.arduino.stop()
 
