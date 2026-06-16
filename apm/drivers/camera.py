@@ -67,21 +67,21 @@ class CameraDriver:
     """
 
     def __init__(self, name: str = "Camera"):
-        self.log = logging.getLogger(f"{__name__}.{name}"),
-        self.is_opened = False,
+        self.log = logging.getLogger(f"{__name__}.{name}")
+        self.is_opened = False
         self.ok = False # True if camera is successfully capturing frames
 
-        self.serial: int = 0,
-        self.fps: int = 15,
-        self.resolution: sl.RESOLUTION = sl.RESOLUTION.SVGA,
-        self.svo_path: str | None = None, # SVO video recording path
-        self.coord_units: sl.UNIT = sl.UNIT.METER,
-        self.coord_system: sl.COORDINATE_SYSTEM = sl.COORDINATE_SYSTEM.IMAGE,
-        self.depth_enabled: bool = False,
+        self.serial: int = 0
+        self.fps: int = 15
+        self.resolution: sl.RESOLUTION = sl.RESOLUTION.SVGA
+        self.svo_path: str | None = None
+        self.coord_units: sl.UNIT = sl.UNIT.METER
+        self.coord_system: sl.COORDINATE_SYSTEM = sl.COORDINATE_SYSTEM.IMAGE
+        self.depth_enabled: bool = False
 
-        self.body_tracking_enabled: bool = False,
-        self.body_tracking_confidence: int = 40,
-        self.body_tracking_model: sl.BODY_TRACKING_MODEL = sl.BODY_TRACKING_MODEL.HUMAN_BODY_FAST,
+        self.body_tracking_enabled: bool = False
+        self.body_tracking_confidence: int = 40
+        self.body_tracking_model: sl.BODY_TRACKING_MODEL = sl.BODY_TRACKING_MODEL.HUMAN_BODY_FAST
     
         self._snapshot: CameraSnapshot | None = None
         self._stop = threading.Event()
@@ -122,8 +122,9 @@ class CameraDriver:
         init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE if self.depth_enabled else sl.DEPTH_MODE.NONE
         camera = sl.Camera()
 
-        if camera.open(init_params) != sl.ERROR_CODE.SUCCESS:
-            self.log.error(f'Failed to open camera {self.serial}')
+        errCode = camera.open(init_params)
+        if errCode != sl.ERROR_CODE.SUCCESS:
+            self.log.error(f'Failed to open camera {self.serial}: {errCode}')
             return
 
         self.is_opened = True
