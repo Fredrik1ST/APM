@@ -14,6 +14,7 @@ from fastapi.responses import Response
 
 import apm.config_handler as config
 from apm.orchestrator import Orchestrator, State, Mode
+from apm.control.pacing_profile import PacingProfile, available_profiles, PROFILES_DIR
 from apm.vision.frame_encoder import encode_jpeg
 
 log = logging.getLogger(__name__)
@@ -63,6 +64,7 @@ MODE_LABELS: dict[Mode, str] = {
     Mode.PACE_ONLY:         'Pace only',
     Mode.DISTANCE_ONLY:     'Distance only',
     Mode.CONSTANT_SPEED:    'Constant speed',
+    Mode.CONSTANT_SPEED_CLOSED: 'Constant speed (closed loop)',
     Mode.CAMERA_TEST:       'Camera test (both)',
     Mode.CAMERA_TEST_FRONT: 'Camera test (front)',
     Mode.CAMERA_TEST_BACK:  'Camera test (back)',
@@ -73,6 +75,43 @@ MODE_LABELS: dict[Mode, str] = {
 
 _ACTIVE_STATES = {State.STARTING, State.RUNNING, State.RUNNING_PACE,
                   State.RUNNING_DIST, State.RUNNING_CONST, State.STOPPING}
+
+
+# ---------------------------------------------------------------------------
+# Pacing profile chart
+# ---------------------------------------------------------------------------
+
+def _profile_chart_options(profile: PacingProfile) -> dict:
+    '''ECharts option dict plotting cumulative distance and the speed steps over time.'''
+    dist_t, dist_d = profile.distance_curve()
+    spd_t, spd_v = profile.speed_curve()
+    green, blue, grey = '#4ade80', '#60a5fa', '#aaa'
+    return {
+        'darkMode': True,
+        'backgroundColor': 'transparent',
+        'grid': {'left': 55, 'right': 55, 'top': 40, 'bottom': 45},
+        'tooltip': {'trigger': 'axis'},
+        'legend': {'data': ['Distance', 'Speed'], 'textStyle': {'color': '#ccc'}},
+        'xAxis': {
+            'type': 'value', 'name': 'time (s)', 'nameLocation': 'middle', 'nameGap': 28,
+            'axisLabel': {'color': grey}, 'nameTextStyle': {'color': grey},
+        },
+        'yAxis': [
+            {'type': 'value', 'name': 'distance (m)', 'position': 'left',
+             'axisLabel': {'color': green}, 'nameTextStyle': {'color': green}},
+            {'type': 'value', 'name': 'speed (m/s)', 'position': 'right',
+             'axisLabel': {'color': blue}, 'nameTextStyle': {'color': blue},
+             'splitLine': {'show': False}},
+        ],
+        'series': [
+            {'name': 'Distance', 'type': 'line', 'yAxisIndex': 0, 'showSymbol': False,
+             'lineStyle': {'color': green, 'width': 2}, 'areaStyle': {'opacity': 0.08, 'color': green},
+             'data': [[round(t, 3), round(d, 3)] for t, d in zip(dist_t, dist_d)]},
+            {'name': 'Speed', 'type': 'line', 'step': 'end', 'yAxisIndex': 1, 'showSymbol': False,
+             'lineStyle': {'color': blue, 'width': 2},
+             'data': [[round(t, 3), round(v, 3)] for t, v in zip(spd_t, spd_v)]},
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -155,6 +194,51 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                 gnss_row      = ui.row().classes('items-center gap-2')
                 ui.separator().classes('my-2')
                 mode_log_row  = ui.row().classes('items-start gap-2 w-full')
+
+        # --- pacing profile -----------------------------------------------
+        with ui.card().classes('mx-4 mb-4 self-stretch'):
+            with ui.row().classes('items-center gap-3 w-full'):
+                ui.icon('timeline', size='md', color='green')
+                ui.label('Pacing profile').classes('text-lg font-semibold')
+                ui.space()
+                prof_options = {p.name: p.name for p in available_profiles()}
+                _current = config.load().get('cruise_control', {}).get('pacing_profile')
+                _initial = _current if _current in prof_options else next(iter(prof_options), None)
+                profile_select = ui.select(
+                    prof_options, value=_initial, label='CSV',
+                ).classes('min-w-48').props('outlined dense')
+
+            profile_chart = ui.echart({}).classes('w-full').style('height: 300px')
+            profile_summary = ui.label().classes('text-xs text-gray-400 font-mono')
+
+            def show_profile(name: str | None) -> None:
+                profile_chart.options.clear()
+                if not name:
+                    profile_chart.update()
+                    profile_summary.set_text('No pacing profiles found in pacing_profiles/.')
+                    return
+                try:
+                    profile = PacingProfile.from_csv(PROFILES_DIR / name)
+                except (OSError, ValueError) as e:
+                    profile_chart.update()
+                    profile_summary.set_text(f'Could not load {name}: {e}')
+                    return
+                profile_chart.options.update(_profile_chart_options(profile))
+                profile_chart.update()
+                profile_summary.set_text(
+                    f'{len(profile.segments)} segments · {profile.total_duration:.0f} s '
+                    f'· {profile.total_distance:.0f} m total'
+                )
+
+            def on_profile_change(e) -> None:
+                doc = config.load()
+                doc['cruise_control']['pacing_profile'] = e.value
+                config.save(doc)
+                show_profile(e.value)
+                ui.notify(f'Pacing profile: {e.value}', type='positive', position='bottom-right')
+
+            profile_select.on_value_change(on_profile_change)
+            show_profile(_initial)
 
         # --- camera feeds -------------------------------------------------
         def _camera_card(label: str, src: str):
