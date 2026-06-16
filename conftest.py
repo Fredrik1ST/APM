@@ -14,6 +14,12 @@ import pytest
 INPUT_DIR = Path(__file__).resolve().parent / 'tests' / 'input'
 INPUT_DIR.mkdir(exist_ok=True)
 
+INPUT_DIR = Path(__file__).resolve().parent / 'tests' / 'input' / 'img'
+INPUT_DIR.mkdir(exist_ok=True)
+
+INPUT_DIR = Path(__file__).resolve().parent / 'tests' / 'csv'
+INPUT_DIR.mkdir(exist_ok=True)
+
 OUTPUT_DIR = Path(__file__).resolve().parent / 'tests' / 'output'
 OUTPUT_DIR.mkdir(exist_ok=True)
 

@@ -87,13 +87,10 @@ class Orchestrator:
         self.back_camera    = CameraDriver(name="back")
 
         # Signals and status to/from user interface (e.g. web app)
-        self._run_event     = threading.Event()  # set by request_start()
-        self._stop_event    = threading.Event()  # set by request_stop()
-
-        self.arduino_ok: bool = False
-        self.front_camera_ok: bool = False
-        self.back_camera_ok: bool = False
-        self.gnss_ok: bool = False
+        self._run_event     = threading.Event() # set by request_start()
+        self._stop_event    = threading.Event() # set by request_stop()
+        self.front_image: bytes | None = None  # Store post-processed camera image (e.g. with lane overlay)
+        self.back_image: bytes | None = None   # Store post-processed camera image (e.g. with runner tracking overlay)
 
 
     # -------------------------------------------------------------------------
@@ -181,7 +178,7 @@ class Orchestrator:
             case Mode.CAMERA_TEST:
                 pass # TODO
             case Mode.CAMERA_TEST_FRONT:
-                pass # TODO
+                self._run_camera_test_front()
             case Mode.CAMERA_TEST_BACK:
                 self._run_camera_test_back()
             case Mode.GNSS_TEST:
@@ -192,10 +189,22 @@ class Orchestrator:
                 self._run_lane_keeper_test()
 
 
+    def _run_camera_test_front(self) -> None:
+        """Start the front camera with lane detection enabled. Log detected lanes and get a sense of accuracy"""
+        kwargs = self._camera_kwargs(name='front')
+        self.front_camera.start(**kwargs)
+        try:
+            modes.camera_test_front(self.front_camera, self._stop_event, self.cfg,
+                                        lambda img: setattr(self, 'front_image', img))
+        finally:
+            self.mode = Mode.STOPPING
+            self.front_camera.stop()
+
+
     def _run_camera_test_back(self) -> None:
         """Start the back camera with body tracking enabled. Log whether a runner is detected and their distance."""
         kwargs = self._camera_kwargs(name='back')
-        self.back_camera.start(kwargs)
+        self.back_camera.start(**kwargs)
         try:
             modes.camera_test_back(self.back_camera, self._stop_event, self.cfg)
         finally:
@@ -206,7 +215,7 @@ class Orchestrator:
     def _run_gnss_test(self) -> None:
         """Verify that the GNSS receiver is working + GPSD daemon is running by logging position and speed."""
         kwargs = self._gnss_kwargs()
-        if self.gnss.start(kwargs) != 0:
+        if self.gnss.start(**kwargs) != 0:
             log.error('GNSS failed to start - aborting test.')
             return
         try:
@@ -219,7 +228,7 @@ class Orchestrator:
     def _run_arduino_test(self) -> None:
         """Send commands to the Arduino and verify feedback until user stops the test."""
         kwargs = self._arduino_kwargs()
-        self.arduino.start(kwargs)
+        self.arduino.start(**kwargs)
         try:
             modes.arduino_test(self.arduino, self._stop_event, self.cfg)
         finally:
@@ -230,12 +239,12 @@ class Orchestrator:
     def _run_lane_keeper_test(self) -> None:
         """Test the Lane Keeper controller without any speed control for tuning / debugging."""
         cam_kwargs = self._camera_kwargs(name='front')
-        self.front_camera.start(cam_kwargs)
+        self.front_camera.start(**cam_kwargs)
 
         arduino_kwargs = self._arduino_kwargs()
         self.arduino.start(arduino_kwargs)
         try:
-            modes.lane_keeper_test(self.front_camera, self._stop_event, self.cfg)
+            modes.lane_keeper_test(self.front_camera, self.arduino, self._stop_event, self.cfg, self.front_image)
         finally:
             self.mode = Mode.STOPPING
             self.front_camera.stop()
@@ -243,12 +252,8 @@ class Orchestrator:
 
 
     def _shutdown(self) -> None:
-        if self.arduino.is_connected:
-            self.arduino.stop()
-        if self.front_camera.is_open:
-            self.front_camera.stop()
-        if self.back_camera.is_open:
-
+        self.back_image = None
+        self.front_image = None
         self._stop_event.clear()
         log.info('Orchestrator stopped')
         self.state = State.IDLE

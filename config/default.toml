@@ -1,27 +1,4 @@
-# ============================================================== 
-# Logging
-# ==============================================================
 
-[logging]
-# Levels: DEBUG < INFO < WARNING < ERROR < CRITICAL
-level = "DEBUG"     # Default root logger level = level of any logger without a specific override in [logging.levels]
-
-[logging.levels]
-# Per-module overrides (e.g. to increase verbosity for debugging / reduce it for noisy modules
-
-"apm.control.cruise_control" = "INFO"
-"apm.control.distance_control" = "INFO"
-"apm.control.lane_keeper"  = "WARNING"
-"apm.control.pid_controller" = "WARNING"
-"apm.control.velocity_profiles" = "WARNING"
-
-"apm.drivers.arduino" = "INFO"
-"apm.drivers.camera.front" = "INFO"
-"apm.drivers.camera.back" = "INFO"
-"apm.drivers.gnss" = "INFO"
-
-"apm.vision.frame_encoder" = "WARNING"
-"apm.vision.line_detector" = "WARNING"
 
 # ============================================================== 
 # Cameras
@@ -66,11 +43,14 @@ detection_confidence = 40
 jpeg_quality = 80       # 0-100 (higher = better)
 jpeg_scale = 0.5        # Fraction to scale down frames for display (e.g. in web app) to reduce bandwidth and CPU usage
 
-[lane_detection]
-canny_sigma = 0.33      # Standard deviation of Gaussian blur before edge detection (higher = more blur = fewer edges)
-angle_threshold = 60    # [degrees] Max angle from vertical for a line to be considered a lane line
-hough_threshold = 90    # Minimum Hough accumulator votes to accept a line.
-mask_polygon = [[330, 172], [340, 399], [591, 399], [444, 172]] # Polygon to mask out battery box in preprocessed image
+[lane_detector]
+canny_sigma = 0.33    #0.33      # Standard deviation of Gaussian blur before edge detection (higher = more blur = fewer edges)
+angle_threshold = 75            # [degrees] Max angle from vertical for a line to be considered a lane line
+hough_threshold = 90  #90        # Minimum Hough accumulator votes to accept a line.
+mask_polygons = [                # Polygonal masks to filter out / ignore during lane detection
+[[324, 172], [324, 70], [440,69], [610, 172]],  # Mask battery box
+[[257,172], [270, 155], [336, 150], [336, 172]] # Mask car hood
+]
 cut_top = 0.571         # fraction of image height to crop (4/7)
 output_width = 640      # pixels to resize width to before lane detection (height is scaled proportionally)
 
@@ -78,9 +58,10 @@ output_width = 640      # pixels to resize width to before lane detection (heigh
 # Control parameters
 # ==============================================================
 
+# Feedforward speed model parameters for converting desired speed (m/s) to PWM (microsecond pulse width)
 [speed_model]
-factor = 20.23       # m/s to PWM factor for default affine speed model
-offset = 1540        # Neutral PWM value for 0 m/s
+gain = 20.23        # m/s to PWM factor for default affine speed model
+bias = 1540         # Neutral PWM value for 0 m/s
 coefficients = [20.23, 1540] # Coefficients for polynomial speed model (starting with highest degree)
 
 [lane_keeping]
@@ -134,8 +115,6 @@ kp = 80.0                   # 80.0
 ki = 1251.0                 # 1251.0
 kd = 0.0                    # 0.0
 
-
-
 # ============================================================== 
 # GNSS
 # ==============================================================
@@ -144,7 +123,7 @@ kd = 0.0                    # 0.0
 #device = "/dev/ttyACM0"
 #baud_rate = 115200
 measurement_rate = 10       # [Hz]
-speed_threshold = 0.07      # m/s — minimum speed threshold to consider valid (to filter out noise when stationary)
+speed_threshold = 0.07      # m/s - minimum speed threshold to consider valid (to filter out noise when stationary)
 
 # ============================================================== 
 # Arduino
@@ -167,6 +146,34 @@ factor = 20.23 # Linear model to convert desired speed (m/s) to PWM (microsecond
 # ============================================================== 
 # NiceGUI web app
 # ============================================================== 
+
 [webapp]
 host = "0.0.0.0"
 port = 8080
+jpeg_quality = 80       # 0-100 (higher = better)
+jpeg_scale = 0.5        # Fraction to scale down frames for display (e.g. in web app) to reduce bandwidth and CPU usage
+
+# ============================================================== 
+# Logging
+# ==============================================================
+
+[logging]
+# Levels: DEBUG < INFO < WARNING < ERROR < CRITICAL
+level = "DEBUG"     # Default root logger level = level of any logger without a specific override in [logging.levels]
+
+[logging.levels]
+# Per-module overrides (e.g. to increase verbosity for debugging / reduce it for noisy modules
+
+"apm.control.cruise_control" = "INFO"
+"apm.control.distance_control" = "INFO"
+"apm.control.lane_keeper"  = "WARNING"
+"apm.control.pid_controller" = "WARNING"
+"apm.control.velocity_profiles" = "WARNING"
+
+"apm.drivers.arduino" = "INFO"
+"apm.drivers.camera.front" = "INFO"
+"apm.drivers.camera.back" = "INFO"
+"apm.drivers.gnss" = "INFO"
+
+"apm.vision.frame_encoder" = "WARNING"
+"apm.vision.line_detector" = "WARNING"
