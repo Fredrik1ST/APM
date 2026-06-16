@@ -61,8 +61,8 @@ class GNSSDriver:
 
         self.is_initialized = False
         self.ok = False # True if GNSS data is being successfully received
-        self.measurement_rate_hz = 10
-        self.speed_threshold = 0.07
+        self.measurement_rate_hz: int
+        self.speed_threshold: float
         self.snapshot: GNSSSnapshot | None = None
         
         self._client = None
@@ -80,9 +80,13 @@ class GNSSDriver:
             self._client = GPSDClient(host="127.0.0.1")
         except Exception:
             log.error("No GPSD running .. exit")
-            return -1
-
-        self.set_measurement_rate(measurement_rate_hz)
+            return False
+        
+        try:
+            self.set_measurement_rate(measurement_rate_hz)
+        except Exception:
+            return False
+        
         self._gnss_getter = self._client.dict_stream(convert_datetime=True, filter=["TPV", "SKY"])
 
         # (Re)start thread for continuously grabbing GNSS data
@@ -99,7 +103,7 @@ class GNSSDriver:
         log.info("GNSS fix found")
         with self._is_initialized_mtx:
             self.is_initialized = True
-        return 0
+        return True
 
 
     def set_measurement_rate(self, rate_hz: int = 10):
@@ -109,10 +113,18 @@ class GNSSDriver:
         elif rate_hz > 20:
             rate_hz = 20
         rate_ms = int(1000 / rate_hz)
+        self.measurement_rate_hz = rate_hz
 
         log.info(f'Setting GNSS polling rate to {rate_hz} Hz')
-        result = subprocess.run(['ubxtool', '-p', 'CFG-RATE,', str(rate_ms)], capture_output=True, text=True, timeout=5)
-        log.debug(f'ubxtool response: {result.stdout}')
+        try:
+            result = subprocess.run(['ubxtool', '-p', 'CFG-RATE,', str(rate_ms)], capture_output=True, text=True, timeout=5)
+            log.debug(f'ubxtool response: {result.stdout}')
+        except subprocess.TimeoutExpired:
+            log.error("Timeout while setting GNSS polling rate")
+            raise
+        except Exception as e:
+            log.error(f"Could not set GNSS rate: {e}")
+            raise
 
 
     def getNextGNSSValue(self):
