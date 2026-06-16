@@ -1,7 +1,7 @@
 """This module contains feedforward speed models, outputting a PWM signal based on a desired speed.
 
 The original model was created from manual linear regression on pwm vs GNSS speed measurements:
-pwm = desired_speed * factor + neutral_pwm = v_d * 20.23 + 1540
+pwm = desired_speed * gain + bias = v_d * 20.23 + 1540
 """
 
 from abc import ABC, abstractmethod
@@ -17,14 +17,14 @@ class SpeedModel(ABC):
 
 
 class AffineSpeedModel(SpeedModel):
-    '''Basic affine feedforward speed model: pwm = factor * speed + neutral_pwm'''
+    '''Basic affine feedforward speed model: pwm = gain * speed + bias'''
 
-    def __init__(self, factor: float, neutral_pwm: float):
-        self.factor = factor
-        self.neutral_pwm = neutral_pwm
+    def __init__(self, gain: float, bias: float):
+        self.gain = gain
+        self.bias = bias
 
     def speed_to_pwm(self, speed: float) -> float:
-        return self.factor * speed + self.neutral_pwm
+        return self.gain * speed + self.bias
     
 
 class PolynomialSpeedModel(SpeedModel):
