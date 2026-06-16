@@ -14,12 +14,13 @@ Notes:
 import time
 import logging
 import threading
+from collections.abc import Callable
 
 import tomlkit
 
-from apm.drivers.arduino import ArduinoDriver, MessageCommands, blink, mps_to_pwm
+from apm.drivers.arduino import ArduinoDriver, MessageCommands, blink
 from apm.control.velocity_profiles import LinearRamp, ExponentialRamp, SigmoidRamp
-
+from apm.speed_models.models import AffineSpeedModel as SpeedModel
 
 log = logging.getLogger(__name__)
 
@@ -27,13 +28,17 @@ _TICK = 0.05        # Main loop interval [s] - 20 Hz
 _LOG_INTERVAL = 1.0 # How often to print feedback during a phase [s]
 
 
-def arduino_test_mode(arduino: ArduinoDriver, stop_event: threading.Event,
+def arduino_test(arduino: ArduinoDriver, stop_event: threading.Event,
                       cfg: tomlkit.TOMLDocument) -> None:
     angle_neutral     = cfg["arduino"]["steer_angle"]["neutral"]
     angle_right       = cfg["arduino"]["steer_angle"]["max_right"]
     angle_left        = cfg["arduino"]["steer_angle"]["max_left"]
-    neutral_speed_pwm = cfg["arduino"]["speed_pwm"]["neutral"]
-    pwm_factor        = cfg["arduino"]["speed_pwm"]["factor"]
+
+    feedforward = SpeedModel(
+        gain = cfg["speed_model"]["gain"],
+        bias = cfg["speed_model"]["bias"],
+    )
+    neutral_speed_pwm = feedforward.speed_to_pwm(0.0)
 
     SPEED_1 = 1 # m/s
     SPEED_2 = 2
@@ -82,17 +87,17 @@ def arduino_test_mode(arduino: ArduinoDriver, stop_event: threading.Event,
     log.info(f'  Spinning at {SPEED_1} m/s...')
     _run_phase(arduino, stop_event, duration=8.0,
                run=True, steer_angle=angle_neutral,
-               speed_pwm=mps_to_pwm(set_speed.update(target= SPEED_1, dt = _TICK)))
-    
+               speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_1, _TICK)))
+
     log.info(f'  Spinning at {SPEED_2} m/s...')
     _run_phase(arduino, stop_event, duration=8.0,
                run=True, steer_angle=angle_neutral,
-               speed_pwm=mps_to_pwm(set_speed.update(target = SPEED_2, dt = _TICK)))
+               speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_2, _TICK)))
 
     log.info(f'  Spinning at {SPEED_3} m/s...')
     _run_phase(arduino, stop_event, duration=5.0,
                run=True, steer_angle=angle_neutral,
-               speed_pwm=mps_to_pwm(set_speed.update(target = SPEED_3, dt = _TICK)))
+               speed_pwm=lambda: feedforward.speed_to_pwm(set_speed.update(SPEED_3, _TICK)))
 
     if stop_event.is_set():
         return
@@ -134,17 +139,20 @@ def _wait_for_connection(arduino: ArduinoDriver, stop_event: threading.Event,
 
 def _run_phase(arduino: ArduinoDriver, stop_event: threading.Event,
                duration: float, run: bool, steer_angle: float,
-               speed_pwm: float, blink_leds: bool = False, brake: bool = False) -> None:
-    """Send a fixed command for X seconds, logging feedback once per second."""
+               speed_pwm: float | Callable[[], float],
+               blink_leds: bool = False, brake: bool = False) -> None:
+    """Run a phase for `duration` seconds. `speed_pwm` may be a fixed float or a callable
+    evaluated each tick (use a callable to advance a ramp or other dynamic setpoint)."""
     deadline = time.monotonic() + duration
     last_log  = 0.0
 
     msg = MessageCommands()
     msg.run         = run
     msg.steer_angle = steer_angle
-    msg.speed_pwm   = speed_pwm
 
     while not stop_event.is_set() and time.monotonic() < deadline:
+        msg.speed_pwm = speed_pwm() if callable(speed_pwm) else speed_pwm
+
         if blink_leds:
             msg.green_led = blink(period=0.5)
             msg.red_led   = blink(period=1.0, offset=0.5)
@@ -156,6 +164,7 @@ def _run_phase(arduino: ArduinoDriver, stop_event: threading.Event,
             fb = arduino.read_msg()
             log.info(
                 f'  Feedback | run={fb.running} brake={fb.emergency_brake} '
+                f'speed_pwm={msg.speed_pwm:.0f} '
                 f'green={fb.green_led} red={fb.red_led} msg_nr={fb.message_nr}'
             )
             last_log = now
