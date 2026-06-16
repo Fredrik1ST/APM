@@ -3,7 +3,7 @@
 import os
 import pytest
 import matplotlib.pyplot as plt
-from apm.control.velocity_profiles import LinearProfile, ExponentialProfile, SigmoidProfile
+from apm.control.velocity_profiles import LinearRamp, ExponentialRamp, SigmoidRamp
 
 SECONDS = 8
 DT = 0.01   # seconds per step
@@ -41,20 +41,20 @@ def simulate(profile, targets: list[tuple[float, float]]) -> list[float]:
 # --- Correctness tests ---
 
 def test_linear_reaches_target():
-    profile = LinearProfile(t_accel=lin_t_accel)
+    profile = LinearRamp(t_accel=lin_t_accel)
     for _ in range(int(lin_t_accel / DT) + 10):
         v = profile.update(1.0, DT)
     assert abs(v - 1.0) < 0.01
 
 def test_exponential_reaches_target():
-    profile = ExponentialProfile(alpha=exp_alpha)
-    for _ in range(200):
+    profile = ExponentialRamp(alpha=exp_alpha)
+    for _ in range(STEPS):
         v = profile.update(1.0, DT)
     assert abs(v - 1.0) < 0.01
 
 def test_sigmoid_reaches_target():
-    profile = SigmoidProfile(k=sig_k, s=sig_s)
-    for _ in range(300):
+    profile = SigmoidRamp(k=sig_k, s=sig_s)
+    for _ in range(STEPS):
         v = profile.update(1.0, DT)
     assert abs(v - 1.0) < 0.01
 
@@ -72,9 +72,9 @@ def test_plot_all_profiles(plot):
     time_axis = [i * DT for i in range(STEPS)]
 
     profiles = {
-        "Linear (t_accel={})".format(lin_t_accel): LinearProfile(t_accel=lin_t_accel),
-        "Exponential (α={})".format(exp_alpha):  ExponentialProfile(alpha=exp_alpha),
-        "Sigmoid (k={}, s={})".format(sig_k, sig_s): SigmoidProfile(k=sig_k, s=sig_s),
+        "Linear (t_accel={})".format(lin_t_accel): LinearRamp(t_accel=lin_t_accel),
+        "Exponential (α={})".format(exp_alpha):  ExponentialRamp(alpha=exp_alpha),
+        "Sigmoid (k={}, s={})".format(sig_k, sig_s): SigmoidRamp(k=sig_k, s=sig_s),
     }
 
     fig, axes = plt.subplots(len(profiles), 1, figsize=(plt_width, plt_height), sharex=False)
@@ -97,8 +97,8 @@ def test_plot_all_profiles(plot):
         ax.set_ylabel("Velocity [m/s]")
         ax.set_title(name)
         ax.grid(True)
-        ax.legend()
-        plt.legend(loc="lower right")
+        ax.legend(loc="lower right")
+
 
     axes[-1].set_xlabel("Time [s]")
     plt.tight_layout()
