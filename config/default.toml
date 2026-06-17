@@ -28,7 +28,7 @@ record = false              # Save SVO video recordings to disk (at logs/recordi
 display = false             # Convert frames to JPEG and stream to web app
 
 [camera.back.depth]
-enable = false              # Enable depth perception
+enable = true              # Enable depth perception
 
 [camera.back.body_tracking]
 enable = true
