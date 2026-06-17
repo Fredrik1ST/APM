@@ -208,7 +208,7 @@ class CameraDriver:
                 grab_mono = time.monotonic()
                 camera.retrieve_image(image, sl.VIEW.LEFT)
                 if self.depth_enabled:
-                    camera.retrieve_depth(depth, sl.MEASURE.DEPTH)
+                    camera.retrieve_measure(depth, sl.MEASURE.DEPTH)
 
                 # Copy image / depth data to NumPy arrays before lock
                 image_np = image.get_data().copy()
