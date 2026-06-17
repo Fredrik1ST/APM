@@ -196,7 +196,13 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                 mode_log_row  = ui.row().classes('items-start gap-2 w-full')
 
         # --- pacing profile -----------------------------------------------
-        with ui.card().classes('mx-4 mb-4 self-stretch'):
+        # Only relevant for modes that follow a pacing profile.
+        profile_card = ui.card().classes('mx-4 mb-4 self-stretch')
+        profile_card.bind_visibility_from(
+            mode_select, 'value',
+            backward=lambda m: m in (Mode.NORMAL, Mode.PACE_ONLY),
+        )
+        with profile_card:
             with ui.row().classes('items-center gap-3 w-full'):
                 ui.icon('timeline', size='md', color='green')
                 ui.label('Pacing profile').classes('text-lg font-semibold')
