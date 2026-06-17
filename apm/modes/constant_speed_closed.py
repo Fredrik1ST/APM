@@ -1,18 +1,16 @@
 '''
 Main loop of the Constant Speed (Closed Loop) mode.
 
-Closed-loop speed control: hold a fixed target speed using the CruiseController's
-inner velocity loop (feedforward speed model + PI trim on the PWM, with GNSS speed
-fused through a complementary filter). The outer schedule/distance loop is forced
-off (k_s = 0) since a constant speed has no schedule to track.
+Closed-loop speed control: 
+Hold a fixed target speed using the CruiseController's inner speed loop 
+(FF speed model + PI trim on the PWM, with GNSS speed fused through a complementary filter). 
 
-    target_speed --ramp--> v_d --speed model--> u_ff --+--> PWM -> Arduino
-                                  GNSS --complementary filter--> v_hat
-                                  PI(v_d - v_hat) --> u_fb --------^
+No outer loop (odometry correction) here, since there's no pacing profile.
 
-This is the isolated first hardware test of the cruise inner loop and the basis
-for the full cruise mode (which adds pacing-profile parsing and the outer loop).
-GNSS is required here (unlike the open-loop constant_speed calibration mode).
+    v_d --ramp--> --speed model--> u_ff --+--> PWM -> Arduino
+        GNSS --complementary filter--> v_hat
+        PI(v_d - v_hat) --> u_fb --------^
+    
 '''
 
 import time
@@ -34,7 +32,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-_TICK = 0.05  # Control loop interval [s] - 20 Hz
+_TICK = 1/50  # Control loop interval [s]
 
 
 def constant_speed_closed(arduino: ArduinoDriver, gnss: "GNSSDriver",
@@ -43,6 +41,8 @@ def constant_speed_closed(arduino: ArduinoDriver, gnss: "GNSSDriver",
     '''Closed-loop constant speed control via the CruiseController inner loop.'''
 
     target_speed = float(cfg['constant_speed']['target_speed'])
+    target_duration = float(cfg['constant_speed']['target_duration'])
+    target_distance = float(cfg['constant_speed'].get('target_distance', 0.0))
     profile_name = str(cfg['constant_speed'].get('profile', 'linear'))
 
     cfg_cc = cfg['cruise_control']
@@ -79,12 +79,19 @@ def constant_speed_closed(arduino: ArduinoDriver, gnss: "GNSSDriver",
     last_tick = 0.0
     measured = 0.0  # most recent valid GNSS speed; held through brief fix gaps
 
+    start_time = time.monotonic()
+    distance = 0.0  # integrated v_hat (filtered, GNSS-aided) travelled distance [m]
+
     # Telemetry: commanded vs estimated vs measured speed plus the full PWM breakdown, so the
     # inner loop's tracking and the complementary filter can be plotted/tuned offline.
     with TelemetryLogger('constant_speed_closed') as tlm:
         gnss.set_telemetry(tlm)  # full-rate gnss.csv in the same run directory
         try:
             while not stop_event.is_set():
+                if target_distance == 0.0 and target_duration == 0.0:
+                    log.warning('No target duration or distance set: exiting to avoid running indefinitely.')
+                    break
+
                 now = time.monotonic()
                 dt = now - last_tick if last_tick else _TICK
                 last_tick = now
@@ -95,6 +102,9 @@ def constant_speed_closed(arduino: ArduinoDriver, gnss: "GNSSDriver",
 
                 pwm = controller.update(target_speed, measured, dt)
                 arduino.write_msg(MessageCommands(run=True, speed_pwm=pwm))
+
+                elapsed = now - start_time
+                distance += controller.last_speed_estimate * dt  # integrate v_hat (GNSS-aided)
 
                 link = arduino.get_link_stats()
                 tlm.log('control', {
@@ -117,6 +127,13 @@ def constant_speed_closed(arduino: ArduinoDriver, gnss: "GNSSDriver",
                              f'v_hat={controller.last_speed_estimate:.2f}  measured={measured:.2f} m/s  '
                              f'PWM={pwm:.0f}{"  (saturated)" if controller.last_saturated else ""}')
                     last_log_time = now
+
+                if target_duration > 0.0 and elapsed >= target_duration:
+                    log.info(f'Target duration reached: {elapsed:.1f} s >= {target_duration:.1f} s.')
+                    break
+                if target_distance > 0.0 and distance >= target_distance:
+                    log.info(f'Target distance reached: {distance:.1f} m >= {target_distance:.1f} m.')
+                    break
 
                 stop_event.wait(_TICK)
         finally:

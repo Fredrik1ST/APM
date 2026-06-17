@@ -169,9 +169,9 @@ class Orchestrator:
             case Mode.NONE:
                 log.warning('No mode selected!')
             case Mode.NORMAL:
-                pass # TODO
+                self._run_normal()
             case Mode.PACE_ONLY:
-                pass # TODO
+                self._run_pace_only()
             case Mode.DISTANCE_ONLY:
                 self._run_distance_only()
             case Mode.CONSTANT_SPEED:
@@ -190,6 +190,53 @@ class Orchestrator:
                 self._run_arduino_test()
             case Mode.LANE_KEEPER_TEST:
                 self._run_lane_keeper_test()
+
+
+    def _run_normal(self) -> None:
+        """Full pace-following mode: lane-keep with the front camera while following the
+        pacing profile (cruise) and falling back to distance control when the runner can't
+        keep up. Needs GNSS (speed feedback + odometry), both cameras and the Arduino."""
+        gnss_ok = self.gnss.start(**self._gnss_kwargs())
+        if not gnss_ok:
+            log.error('GNSS failed to start - aborting normal mode (needs speed feedback).')
+            return
+        self.front_camera.start(**self._camera_kwargs(name='front'))
+        self.back_camera.start(**self._camera_kwargs(name='back'))
+        self.arduino.start(**self._arduino_kwargs())
+        try:
+            self.state = State.RUNNING
+            modes.normal(self.arduino, self.gnss, self.front_camera, self.back_camera,
+                         self._stop_event, self.cfg)
+        finally:
+            self.state = State.STOPPING
+            self.arduino.stop()
+            self.front_camera.stop()
+            self.back_camera.stop()
+            self.gnss.stop()
+
+
+    def _run_pace_only(self) -> None:
+        """Pure pace setter: lane-keep with the front camera while following the pacing
+        profile (cruise), never falling back to distance control. The runner is still
+        watched: the run stops if they are lost too long. Needs GNSS, both cameras and
+        the Arduino."""
+        gnss_ok = self.gnss.start(**self._gnss_kwargs())
+        if not gnss_ok:
+            log.error('GNSS failed to start - aborting pace only mode (needs speed feedback).')
+            return
+        self.front_camera.start(**self._camera_kwargs(name='front'))
+        self.back_camera.start(**self._camera_kwargs(name='back'))
+        self.arduino.start(**self._arduino_kwargs())
+        try:
+            self.state = State.RUNNING
+            modes.pace_only(self.arduino, self.gnss, self.front_camera, self.back_camera,
+                            self._stop_event, self.cfg)
+        finally:
+            self.state = State.STOPPING
+            self.arduino.stop()
+            self.front_camera.stop()
+            self.back_camera.stop()
+            self.gnss.stop()
 
 
     def _run_distance_only(self) -> None:

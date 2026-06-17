@@ -124,77 +124,6 @@ Two integrators (the inner PI's I-term and the outer Δv integrator) ultimately
 drive one saturating PWM. Both must be conditioned against ``sat`` - e.g. clamp
 / back-calculation, and freeze the outer integrator while u is saturated - or
 they wind up against the limit and overshoot on release.
-
-
-TikZ block diagram (thesis - not final; may need tweaking for layout):
-===========================
-Compilable with ``\usepackage{tikz}`` and ``\usetikzlibrary{arrows.meta,
-positioning, calc}``. Lift the figure block directly into the thesis.
-
-\begin{figure}[t]
-  \centering
-  \begin{tikzpicture}[
-      >=Latex, node distance=12mm and 14mm, auto,
-      block/.style={draw, rounded corners, minimum height=9mm, minimum width=12mm,
-                    align=center, font=\small},
-      sum/.style={draw, circle, inner sep=0pt, minimum size=6mm, font=\footnotesize},
-      sig/.style={font=\footnotesize}, every node/.style={font=\small}]
-
-    % --- inner forward path ---
-    \node (vp)    [sig] {$v_p$};
-    \node (s1)    [sum, right=of vp] {$\Sigma$};
-    \node (ramp)  [block, right=of s1] {Ramp};
-    \node (s0)    [sum, right=of ramp] {$\Sigma$};
-    \node (g)     [block, right=of s0] {$g(\cdot)$\\\scriptsize speed model};
-    \node (s2)    [sum, right=of g] {$\Sigma$};
-    \node (sat)   [block, right=of s2] {sat};
-    \node (plant) [block, right=of sat] {Vehicle\\/ ESC};
-    \node (vout)  [sig, right=of plant] {$v$};
-
-    \draw[->] (vp)   -- (s1);
-    \draw[->] (s1)   -- (ramp);
-    \draw[->] (ramp) -- node[sig,pos=0.5]{} (s0);
-    \draw[->] (s0)   -- node[sig,name=vd,pos=0.55]{$v_d$} (g);
-    \draw[->] (g)    -- node[sig]{$u_{ff}$} (s2);
-    \draw[->] (s2)   -- node[sig]{$u$} (sat);
-    \draw[->] (sat)  -- (plant);
-    \draw[->] (plant)-- (vout);
-    \node[above=0pt of s0]  {\footnotesize $+$};
-    \node[above=0pt of s2]  {\footnotesize $+$};
-
-    % --- inner feedback: complementary filter + PI ---
-    \node (gnss)  [block, below=14mm of plant] {GNSS};
-    \node (cf)    [block, left=18mm of gnss] {complementary\\filter};
-    \node (sv)    [sum, left=14mm of cf] {$\Sigma$};
-    \node (pi)    [block, above=10mm of sv] {PI};
-
-    \draw[->] (vout) |- (gnss);
-    \draw[->] (gnss) -- node[sig]{$v_{gnss}$} (cf);
-    \draw[->] (cf)   -- node[sig]{$\hat v$} (sv);
-    \draw[->] (vd.south) |- (sv);              % v_d into HPF / inner error (+)
-    \draw[->] (sv)   -- node[sig,pos=0.5]{$e_v$} (pi);
-    \draw[->] (pi)   -| node[sig,pos=0.85]{$u_{fb}$} (s2);
-    \node[left=1pt of sv]   {\footnotesize $+$};   % v_d
-    \node[below=1pt of sv]  {\footnotesize $-$};   % v_hat
-
-    % --- outer schedule loop ---
-    \node (so)    [sum, above=12mm of s1] {$\Sigma$};
-    \node (kout)  [block, right=14mm of so] {$K_s^{out}\!\int\!(\cdot)\,dt$};
-    \node (intp)  [sig, left=of so] {$s_{ref}=\!\int v_p$};
-    \draw[->] (intp) -- (so);
-    \draw[->] (so)   -- node[sig,pos=0.5]{$e_s$} (kout);
-    \draw[->] (kout) |- node[sig,pos=0.85]{$\Delta v$} (s1);
-    \draw[->] (gnss.west) -- ++(-3,0) |- node[sig,pos=0.9]{$s_{meas}=\!\int v_{gnss}$} (so);
-    \node[above=0pt of s1] {\footnotesize $+$};
-    \node[left=1pt of so]  {\footnotesize $+$};   % s_ref
-    \node[below=1pt of so] {\footnotesize $-$};   % s_meas
-
-  \end{tikzpicture}
-  \caption{Cascade cruise controller: feedforward speed model with PI trim on the
-  PWM actuator (inner velocity loop), complementary-filter speed estimation, and
-  an integral schedule-distance correction (outer loop).}
-  \label{fig:cruise-controller}
-\end{figure}
 '''
 
 from apm.control.pid_controller import PIDController
@@ -332,9 +261,25 @@ class CruiseController:
         self.last_saturated = u_sat != u
         return u_sat
 
-    def reset(self, speed: float = 0.0):
-        """Clear all controller state. Call when (re)entering cruise mode."""
-        self.schedule_error = 0.0
+    def integrate_schedule(self, profile_speed: float, gnss_speed: float, dt: float) -> float:
+        """Advance only the outer-loop schedule integral, without touching the inner loop.
+
+        Use this while another controller holds the actuator (e.g. distance control in
+        Normal mode): the schedule deficit s_ref - s_meas = integral(v_p - v_gnss) stays
+        live, so the supervisor can tell when the runner has made up the lost ground.
+        Returns the updated ``schedule_error`` [m]."""
+        self.schedule_error += (profile_speed - gnss_speed) * dt
+        return self.schedule_error
+
+    def reset(self, speed: float = 0.0, keep_schedule: bool = False):
+        """Clear controller state. Call when (re)entering cruise mode.
+
+        Seeds the inner loop (ramp/CF/PID) to ``speed`` for a bumpless resume. Set
+        ``keep_schedule`` to preserve the outer-loop ``schedule_error`` across a handoff
+        (e.g. returning from distance control) so the outer loop nulls the residual
+        deficit instead of forgetting it."""
+        if not keep_schedule:
+            self.schedule_error = 0.0
         self.pid.integral = 0.0
         self.pid.previous_error = 0.0
         self.ramp.reset(speed)
