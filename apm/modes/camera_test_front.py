@@ -65,7 +65,7 @@ def camera_test_front(
                 if snap is not None and snap.image is not None:
                     img_bgr          = snap.image[:, :, :3]
                     img_resized = detector.resize_image(img_bgr)
-                    lanes            = detector.detect(img_bgr)
+                    lanes            = detector.detect(img_resized)
 
                     # Log state transitions immediately
                     if lanes is not None and not lanes_present:
