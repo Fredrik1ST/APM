@@ -11,3 +11,5 @@ from .lane_keeper_test import lane_keeper_test
 from .distance_only import distance_only
 from .constant_speed import constant_speed
 from .constant_speed_closed import constant_speed_closed
+from .normal import normal
+from .pace_only import pace_only
