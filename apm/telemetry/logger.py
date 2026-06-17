@@ -43,6 +43,29 @@ _T_MONO = 't_mono'   # monotonic seconds at log() time - use for intervals / ali
 _T_ISO  = 't_iso'    # wall-clock ISO 8601 at log() time - use for human-readable reference
 
 
+def write_run_note(text: str) -> Path | None:
+    '''Write a free-text note into the most recent telemetry run directory.
+
+    Run directories are timestamp-prefixed, so the newest one is the active/just-finished
+    run. Returns the note path, or None if the text is empty or no run directory exists.
+    Used by the web app to attach an optional note to a run when it is stopped.
+    '''
+    text = text.strip()
+    if not text:
+        return None
+    try:
+        dirs = [d for d in TELEMETRY_DIR.iterdir() if d.is_dir()]
+    except FileNotFoundError:
+        return None
+    if not dirs:
+        return None
+    latest = max(dirs, key=lambda d: d.name)
+    note_path = latest / 'note.txt'
+    note_path.write_text(text.rstrip('\n') + '\n')
+    log.info('Run note written to %s', note_path)
+    return note_path
+
+
 class _Stream:
     '''A single CSV file. Header is fixed on the first row; later rows are written in that
     column order, missing keys left blank and unknown keys dropped (with a one-time warning).'''

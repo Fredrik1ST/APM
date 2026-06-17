@@ -181,8 +181,9 @@ host = "0.0.0.0"
 port = 8080
 jpeg_quality = 80       # 0-100 (higher = better)
 jpeg_scale = 0.5        # Fraction to scale down frames for display (e.g. in web app) to reduce bandwidth and CPU usage
+run_notes = true        # Show a "Run note" field that writes note.txt into the run's telemetry dir on Stop
 
-# ============================================================== 
+# ==============================================================
 # Logging
 # ==============================================================
 

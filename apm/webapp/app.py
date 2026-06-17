@@ -16,6 +16,7 @@ from fastapi.responses import Response
 import apm.config_handler as config
 from apm.orchestrator import Orchestrator, State, Mode
 from apm.control.pacing_profile import PacingProfile, available_profiles, PROFILES_DIR
+from apm.telemetry import write_run_note
 from apm.vision.frame_encoder import encode_jpeg
 
 log = logging.getLogger(__name__)
@@ -169,8 +170,20 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
 
                 start_stop_btn = ui.button('Start', color='green').classes('w-full text-lg')
 
+                run_notes_enabled = bool(orchestrator.cfg.get('webapp', {}).get('run_notes', False))
+                note_input = None
+                if run_notes_enabled:
+                    note_input = ui.textarea(label='Run note (optional)').classes('w-full mt-2')
+                    note_input.props('dense outlined autogrow')
+
                 def toggle_start_stop() -> None:
                     if orchestrator.state in _ACTIVE_STATES:
+                        if note_input is not None:
+                            path = write_run_note(note_input.value or '')
+                            if path is not None:
+                                ui.notify(f'Note saved to {path.parent.name}',
+                                          type='positive', position='bottom-right')
+                                note_input.set_value('')
                         orchestrator.request_stop()
                     else:
                         orchestrator.mode = mode_select.value
