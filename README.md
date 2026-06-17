@@ -13,12 +13,19 @@ Forked from the 2024 NTNU master's thesis ["Development of an Autonomous Rabbit 
 ## Software dependencies
 
 - [ZED SDK](https://www.stereolabs.com/developers/release) (required for camera drivers)
-- [ZED Python API](github.com/stereolabs/zed-python-api) - Recommended to install in a [virtual environment like conda](https://www.stereolabs.com/docs/development/api-languages/python/virtual-environment)
-- Get required Python packages via conda:
+- [ZED Python API](github.com/stereolabs/zed-python-api) (`pyzed`) — installed separately from the
+  ZED SDK, not via conda. The APM currently runs ZED SDK 5.1 / `pyzed` 5.1 on Python 3.13.
+- All other Python packages are declared in [`environment.yml`](environment.yml) (the curated
+  source of truth) and pinned per-architecture in `conda-lock.yml`:
 
 ```bash
-conda install ...  # (To be automated... but just install any packages you need. If you can't find the package, they're usually on conda-forge)
+conda env create -f environment.yml          # first time
+conda env update -f environment.yml --prune   # after editing environment.yml
 ```
+
+The dev PC (`x86_64`) and the ZED Box (`aarch64`) need different build pins, so don't share a
+`conda env export` between them. See **[docs/DEPLOY.md](docs/DEPLOY.md)** for the full workflow,
+reproducible per-arch locks, and the `pyzed`/numpy install ordering.
 
 ## Running manually
 

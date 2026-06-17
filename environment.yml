@@ -1,0 +1,35 @@
+# Curated conda environment for the APM (source of truth - edit this, not `conda env export`).
+#
+# Portable across the x86_64 dev box and the aarch64 ZED Box (Orin): it pins only direct deps,
+# almost all from conda-forge. For exact, per-arch reproducibility render lock files with
+# conda-lock (see docs/DEPLOY.md).
+#
+# Install order matters: conda solves everything below first, then pip runs last for the one
+# package not on conda-forge. Don't `pip install` conda-available packages (numpy, pandas,
+# opencv, ...) - that shadows conda's builds and can cause ABI mismatches.
+#
+# NOT listed here (install separately - see docs/DEPLOY.md):
+#   - pyzed: provided by the ZED SDK installer on the APM only (not on PyPI/conda).
+#
+# Python note: pyzed wheels target a specific Python version. 3.13 matches the dev box; if the
+# ZED SDK on the Orin doesn't support 3.13, pin a supported version for the APM env instead.
+
+name: apm
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  # numerics / vision (conda-forge has aarch64 builds; opencv provides cv2, CPU build is fine here)
+  - numpy>=2.0
+  - scipy>=1.13
+  - pandas>=2.2
+  - matplotlib-base>=3.9   # -base avoids pulling Qt; we render via Agg / web echarts
+  - opencv>=4.10
+  # web UI (pulls in fastapi + uvicorn), config, tests
+  - nicegui>=2.0
+  - tomlkit>=0.13
+  - pytest>=8
+  # pip-only: gpsdclient is not packaged on conda-forge
+  - pip
+  - pip:
+      - gpsdclient>=1.3
