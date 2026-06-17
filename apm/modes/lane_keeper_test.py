@@ -27,6 +27,7 @@ from apm.telemetry import TelemetryLogger
 
 log = logging.getLogger(__name__)
 
+_TICK = 1/50                # Control loop interval [s]
 _LOG_INTERVAL      = 1.0   # Periodic lane-line status log [s]
 _STABILITY_WINDOW  = 30    # Number of frames to include in jumpiness stats
 _STABILITY_INTERVAL = 10.0 # How often to log jumpiness stats [s]
@@ -159,7 +160,7 @@ def lane_keeper_test(
                     )
                     set_front_image(jpg)
 
-                stop_event.wait(1 / camera.fps)
+                stop_event.wait(1 / _TICK)
         finally:
             # Safe stop on exit
             arduino.write_msg(MessageCommands(run=False, steer_angle=90.0))

@@ -25,7 +25,7 @@ from apm.telemetry import TelemetryLogger
 
 log = logging.getLogger(__name__)
 
-_TICK = 0.05        # Main loop interval [s] - 20 Hz
+_TICK = 1.0/50.0    # Main loop interval [s]
 _LOG_INTERVAL = 1.0 # How often to print feedback during a phase [s]
 
 
@@ -34,6 +34,9 @@ def arduino_test(arduino: ArduinoDriver, stop_event: threading.Event,
     angle_neutral     = cfg["arduino"]["steer_angle"]["neutral"]
     angle_right       = cfg["arduino"]["steer_angle"]["max_right"]
     angle_left        = cfg["arduino"]["steer_angle"]["max_left"]
+
+    _TICK = cfg["control"]["dt"]                    # Main loop interval [s]
+    _LOG_INTERVAL = cfg["control"]["log_interval"]  # How often to print feedback during a phase [s]
 
     feedforward = SpeedModel(
         gain = cfg["speed_model"]["gain"],

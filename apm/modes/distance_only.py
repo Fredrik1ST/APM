@@ -23,6 +23,7 @@ from apm.telemetry import TelemetryLogger
 
 log = logging.getLogger(__name__)
 
+_TICK = 1/50  # Control loop interval [s]
 _LOG_INTERVAL = 1.0  # Periodic status log [s]
 
 
@@ -117,7 +118,7 @@ def distance_only(
                             log.info('No runner detected')
                         last_log_time = now
 
-                stop_event.wait(1 / camera.fps)
+                stop_event.wait(1 / _TICK)
         finally:
             arduino.write_msg(MessageCommands(run=False))
 

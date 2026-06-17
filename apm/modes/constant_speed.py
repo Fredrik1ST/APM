@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-_TICK = 0.05  # Control loop interval [s] - 20 Hz
+_TICK = 1/50 # Control loop interval [s]
 
 
 def _make_ramp(cfg: tomlkit.TOMLDocument, name: str):
@@ -56,6 +56,8 @@ def constant_speed(arduino: ArduinoDriver, stop_event: threading.Event,
 
     cfg_cs = cfg['constant_speed']
     target_speed = float(cfg_cs['target_speed'])
+    target_duration = float(cfg_cs['target_duration'])
+    target_distance = float(cfg_cs.get('target_distance', 0.0))
     profile_name = str(cfg_cs.get('profile', 'linear'))
 
     cfg_sm = cfg['speed_model']
@@ -69,14 +71,26 @@ def constant_speed(arduino: ArduinoDriver, stop_event: threading.Event,
         return
 
     last_log_time = 0.0
+
+    start_time = time.monotonic()
+    distance = 0.0  # integrated commanded distance [m]
+
     with TelemetryLogger('constant_speed') as tlm:
         if gnss is not None:
             gnss.set_telemetry(tlm)  # full-rate gnss.csv in the same run directory
         try:
             while not stop_event.is_set():
+
+                if target_distance == 0.0 and target_duration == 0.0:
+                    log.warning('No target duration or distance set: exiting to avoid running indefinitely.')
+                    break
+
                 cmd_speed = ramp.update(target_speed, _TICK)
                 pwm = speed_model.speed_to_pwm(cmd_speed)
                 arduino.write_msg(MessageCommands(run=True, speed_pwm=pwm))
+
+                elapsed = time.monotonic() - start_time
+                distance += cmd_speed * _TICK  # integrate commanded speed (open loop)
 
                 measured = None
                 if gnss is not None:
@@ -99,6 +113,13 @@ def constant_speed(arduino: ArduinoDriver, stop_event: threading.Event,
                     log.info(f'cmd_speed={cmd_speed:.2f} m/s (target {target_speed:.2f})  PWM={pwm:.0f}{meas_str}')
                     last_log_time = now
 
+                if target_duration > 0.0 and elapsed >= target_duration:
+                    log.info(f'Target duration reached: {elapsed:.1f} s >= {target_duration:.1f} s.')
+                    break
+                if target_distance > 0.0 and distance >= target_distance:
+                    log.info(f'Target distance reached: {distance:.1f} m >= {target_distance:.1f} m.')
+                    break
+
                 stop_event.wait(_TICK)
         finally:
             if gnss is not None:
@@ -110,7 +131,7 @@ def constant_speed(arduino: ArduinoDriver, stop_event: threading.Event,
 
 
 def _wait_for_connection(arduino: ArduinoDriver, stop_event: threading.Event,
-                         timeout: float = 10.0) -> bool:
+                         timeout: float = 1.0) -> bool:
     '''Block until the Arduino TCP client connects, so we don't ramp while disconnected.'''
     deadline = time.monotonic() + timeout
     while not arduino.is_connected:
