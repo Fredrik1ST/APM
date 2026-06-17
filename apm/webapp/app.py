@@ -7,6 +7,7 @@ reads state from and calls methods on the Orchestrator instance it receives.
 Started as a daemon thread by Orchestrator.run().
 '''
 
+import ast
 import threading
 import logging
 from nicegui import ui, app as nicegui_app
@@ -285,6 +286,13 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                                     d[keys[-1]] = int(raw)
                                 elif isinstance(original, float):
                                     d[keys[-1]] = float(raw)
+                                elif isinstance(original, list):
+                                    # The editor renders lists (e.g. mask_polygons) as str(value);
+                                    # parse the text back into a list instead of storing the string.
+                                    parsed = ast.literal_eval(raw)
+                                    if not isinstance(parsed, list):
+                                        raise ValueError(f'{keys[-1]} must be a list')
+                                    d[keys[-1]] = parsed
                                 else:
                                     d[keys[-1]] = raw
                             config.save(doc)
