@@ -86,43 +86,47 @@ kd = 0.03
 beta = 1.0                  # Setpoint weighting for proportional term
 gamma = 1.0
 
+# --- Constant speed mode: ---
+# --- Hold a target speed or reach a target split time (Open or closed loop) ---
+[constant_speed]
+target_speed = 1.0          # [m/s] Target speed to hold
+target_duration = 1.0       # [s]
+target_distance = 0.0       # [m] If set - run until this distance is reached (overrides target_duration
+profile = "linear"          # Velocity profile for smooth acceleration: linear | exponential | sigmoid (params in [velocity_profile])
+
+# --- Cruise controller: Cascaded speed + odometry control for following a pacing profile ---
+[cruise_control]
+pacing_profile = "test.csv" # selected CSV in pacing_profiles/ (set from the web app)
+k_s = 0.05                  # [1/s] outer-loop gain: integral speed correction per meter off from pacing profile
+cf_tau = 1.0                # [s] complementary filter time constant (larger = trust dead reckoning longer between GNSS fixes)
+pwm_min = 1540              # actuator lower bound [pwm] (neutral - no reverse)
+pwm_max = 1560              # actuator upper bound [pwm] (real safety values should be hardcoded in the Arduino)
+t_control_switch = 3.0      # [s] Time filter between cruise control vs. distance control switch
+catchup_tolerance_m = 2.0 # [m] schedule deficit (s_ref - s_meas) that's acceptable for switching back to cruise from distance control
+runner_timeout = 10.0       # [s] Safety watchdog: quit Normal mode if the runner is missing or stationary this long (0 = disabled)
+
+[cruise_control.pid]
+kp = 30.0                   # [pwm per m/s] proportional trim on speed error
+ki = 10.0                   # [pwm per m/s/s] integral trim on speed error
+kd = 0.0
+beta = 1.0
+gamma = 1.0
+
 [distance_control]
-d_min = 2.0                 # [meters]
+d_min = 2.0                 # [meters] Setpoint for distance control: (d_max - d_min)/2
 d_max = 6.0                 # [meters]
 runner_lost_timeout = 0.5   # [s] Keep running through body-tracking dropouts shorter than this (run-signal debounce)
 runner_acquire_time = 0.0   # [s] Require the runner to be seen this long before starting (0 = start immediately)
+profile = "linear"          # Velocity profile for smooth acceleration: linear | exponential | sigmoid (params in [velocity_profile])
 
 [distance_control.pid]
 kp = 0.3
 ki = 0.0
 kd = 0.06
-beta = 1.0                  # Setpoint weighting for proportional term
-gamma = 0.1                 # Setpoint weighting for derivative term
-
-# Open-loop constant speed mode: hold a target speed via the speed model + velocity profile.
-[constant_speed]
-target_speed = 1.0            # [m/s] Target speed to hold
-target_duration = 1.0         # [s] 
-profile = "linear"            # Velocity profile for smooth acceleration: linear | exponential | sigmoid (params in [velocity_profile.*])
-
-# Closed-loop cruise controller (see apm/control/cruise_controller.py): feedforward speed model
-# + PI trim on the PWM, with GNSS speed fused through a complementary filter. The constant-speed-
-# closed test mode reuses [constant_speed].target_speed/profile and forces the outer loop off (k_s=0).
-[cruise_control]
-pacing_profile = "test.csv"   # selected schedule CSV in pacing_profiles/ (set from the web app)
-k_s = 0.05          # [1/s] outer-loop gain: speed correction per metre of schedule error (unused at constant speed)
-cf_tau = 1.0        # [s] complementary filter time constant (larger = trust dead reckoning longer between GNSS fixes)
-pwm_min = 1540      # actuator lower bound [pwm] (neutral - no reverse)
-pwm_max = 1560      # actuator upper bound [pwm] (real safety values should be hardcoded in the Arduino)
-
-[cruise_control.pid]
-kp = 30.0           # [pwm per m/s] proportional trim on speed error (needs field tuning)
-ki = 10.0           # [pwm per m/s/s] integral trim (eliminates steady-state speed error)
-kd = 0.0
 beta = 1.0
-gamma = 1.0
+gamma = 0.1
 
-# Velocity profile parameters
+# --- Velocity profile parameters ------------------------------------------------------------
 [velocity_profile.linear]
 t_accel = 4.0               # [seconds] Time to reach target speed during linear acceleration
 
@@ -189,11 +193,8 @@ level = "DEBUG"     # Default root logger level = level of any logger without a 
 [logging.levels]
 # Per-module overrides (e.g. to increase verbosity for debugging / reduce it for noisy modules
 
-"apm.control.cruise_control" = "INFO"
-"apm.control.distance_control" = "INFO"
-"apm.control.lane_keeper"  = "WARNING"
-"apm.control.pid_controller" = "WARNING"
-"apm.control.velocity_profiles" = "WARNING"
+"apm.control.cruise_controller" = "INFO"
+"apm.control.distance_controller" = "INFO"
 
 "apm.drivers.arduino" = "INFO"
 "apm.drivers.camera.front" = "INFO"
