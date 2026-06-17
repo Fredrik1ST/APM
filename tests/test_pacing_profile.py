@@ -23,6 +23,40 @@ def test_skips_blanks_and_comments():
     assert len(p.segments) == 2
 
 
+def test_distance_header_converts_to_durations():
+    '''A "distance" header makes the second column metres; duration = distance / speed.'''
+    rows = [
+        ['speed (m/s)', 'distance (m)'],
+        ['0.5', '1'],      # 1 m at 0.5 m/s -> 2 s
+        ['3.2', '320'],    # 320 m at 3.2 m/s -> 100 s
+    ]
+    p = PacingProfile.from_rows(rows)
+    assert [(s.speed, s.duration) for s in p.segments] == [(0.5, 2.0), (3.2, 100.0)]
+
+
+def test_length_header_is_distance():
+    '''"length" is also recognised as a distance column.'''
+    p = PacingProfile.from_rows([['speed', 'length'], ['2.0', '10']])  # 10 m / 2 m/s -> 5 s
+    assert [(s.speed, s.duration) for s in p.segments] == [(2.0, 5.0)]
+
+
+def test_duration_header_is_time():
+    '''"duration" keeps the second column as time (seconds).'''
+    p = PacingProfile.from_rows([['speed', 'duration'], ['2.0', '10']])
+    assert p.segments[0].duration == 10.0
+
+
+def test_no_header_defaults_to_time():
+    '''Without a recognised header the second column is time, as before.'''
+    p = PacingProfile.from_rows([['2.0', '10']])
+    assert p.segments[0].duration == 10.0
+
+
+def test_zero_speed_with_distance_raises():
+    with pytest.raises(ValueError):
+        PacingProfile.from_rows([['speed', 'distance (m)'], ['0.0', '5']])
+
+
 def test_speed_at_is_piecewise_constant():
     p = PacingProfile([Segment(0.5, 1.0), Segment(1.0, 2.0), Segment(3.0, 1.0)])
     assert p.speed_at(-1.0) == 0.5      # clamped to first segment

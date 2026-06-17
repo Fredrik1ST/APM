@@ -1,19 +1,29 @@
 '''
 Pacing profile: the target-speed schedule the cruise controller follows.
 
-Loaded from a CSV of ``(speed [m/s], duration [s])`` rows, e.g.::
+Loaded from a CSV of ``(speed [m/s], duration [s])`` rows, e.g.
 
     speed (m/s), time (s)
     0.5, 1
     1.0, 30
     3.2, 120
 
-A header row is optional and skipped automatically, as are blank lines, ``#``
-comments and trailing commas. The profile is a *piecewise-constant* (step)
-function of time: ``speed_at(t)`` returns the active segment's speed. Transitions
-between segments are intentionally not interpolated here -- the cruise
-controller's velocity ramp (see ``velocity_profiles.py``) smooths the steps so
-the setpoint never jumps.
+The second column may also be a *distance*, recognised from the title in the header:
+``time``/``duration`` -> seconds; 
+``length``/``distance`` -> metres. 
+A distance schedule is converted to durations on load (``duration = distance / speed``) 
+so the output profile used by the program is alwayys on the same form (speed , duration)
+
+    speed (m/s), distance (m)
+    0.5, 1        ->  held for 1 / 0.5 = 2 s
+    3.2, 320      ->  held for 320 / 3.2 = 100 s
+
+A header row is optional and skipped automatically (without one the second column is time)
+Blank lines, ``#`` comments and trailing commas are also ignored. 
+The profile is a *piecewise-constant* (step) function of time: ``speed_at(t)`` returns the active segment's speed. 
+
+Transitions between segments are not interpolated here. 
+Apply smoothing/ramping between setpoints in the controller to avoid abrupt changes in speed.
 '''
 
 from __future__ import annotations
@@ -50,24 +60,55 @@ class PacingProfile:
             raise ValueError('Pacing profile has no segments.')
         self.total_duration = sum(s.duration for s in self.segments)
 
+    # Header words that mark the second column's unit -> whether it is a distance.
+    _SECOND_COLUMN_UNITS = {'time': False, 'duration': False, 'length': True, 'distance': True}
+
+    @classmethod
+    def _second_column_is_distance(cls, header_cells: list[str]) -> bool | None:
+        '''Whether the second column holds a distance, read from header text.
+
+        Returns True (distance), False (time), or None if no unit word is recognised.
+        '''
+        text = ' '.join(header_cells).lower()
+        for word, is_distance in cls._SECOND_COLUMN_UNITS.items():
+            if word in text:
+                return is_distance
+        return None
+
     @classmethod
     def from_rows(cls, rows: Iterable[Iterable[str]]) -> 'PacingProfile':
-        '''Build a profile from raw CSV cells (header/blank/comment lines skipped).'''
+        '''Build a profile from raw CSV cells (header/blank/comment lines skipped).
+
+        The second column is a time by default, or a distance if the header says so
+        (see module docstring); distances are converted to durations on the fly.
+        '''
         segments: list[Segment] = []
+        second_is_distance = False  # default: second column is a time
         for line_no, raw in enumerate(rows, start=1):
             cells = [c.strip() for c in raw if c.strip() != '']  # drop trailing-comma blanks
             if not cells or cells[0].startswith('#'):
                 continue  # blank line or comment
             try:
-                speed, duration = float(cells[0]), float(cells[1])
+                speed, value = float(cells[0]), float(cells[1])
             except (ValueError, IndexError):
                 if not segments:
-                    continue  # header / preamble before any data -> skip
+                    # header / preamble before any data: pick up the column unit, then skip
+                    unit = cls._second_column_is_distance(cells)
+                    if unit is not None:
+                        second_is_distance = unit
+                    continue
                 raise ValueError(f'Malformed pacing-profile row {line_no}: {raw!r}')
             if speed < 0:
                 raise ValueError(f'Negative speed on row {line_no}: {speed} m/s (no reverse).')
-            if duration <= 0:
-                raise ValueError(f'Non-positive duration on row {line_no}: {duration} s.')
+            unit_name = 'distance' if second_is_distance else 'duration'
+            if value <= 0:
+                raise ValueError(f'Non-positive {unit_name} on row {line_no}: {value}.')
+            if second_is_distance:
+                if speed == 0:
+                    raise ValueError(f'Zero speed cannot cover a distance on row {line_no}.')
+                duration = value / speed  # distance [m] / speed [m/s] -> duration [s]
+            else:
+                duration = value
             segments.append(Segment(speed, duration))
         return cls(segments)
 
