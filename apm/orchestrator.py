@@ -31,10 +31,9 @@ class Orchestrator:
     Finite state machine responsible for main program flow, user interface and component drivers.
 
     Basic principle:
-        1. Initialized by main.py
-        2. Runs a web interface on local network
-        3. Waits for user input (config / start / stop)
-        4. Run selected program mode until completed or stopped by user
+        1. Initialized by main.py alongside the web app
+        2. Waits for user input (config / start / stop)
+        3. Run selected program mode until completed or stopped by user
 
     States: 
         - Idle: waiting for user input to start or configure parameters

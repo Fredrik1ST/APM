@@ -402,8 +402,11 @@ def _register_camera_routes(orchestrator: Orchestrator) -> None:
 # Public API - called by Orchestrator
 # ---------------------------------------------------------------------------
 
-def start(orchestrator: Orchestrator, host: str = '0.0.0.0', port: int = 8080) -> None:
-    '''Register the UI page and start NiceGUI on a daemon thread.'''
+def start(orchestrator: Orchestrator, host: str = '0.0.0.0', port: int = 8080) -> threading.Thread:
+    '''Register the UI page and start NiceGUI on a daemon thread.
+
+    Returns the server thread; pass it to stop() for a graceful shutdown.
+    '''
     log_handler = _LastLogHandler()
     log_handler.setLevel(logging.DEBUG)
     logging.getLogger().addHandler(log_handler)
@@ -418,3 +421,27 @@ def start(orchestrator: Orchestrator, host: str = '0.0.0.0', port: int = 8080) -
     )
     thread.start()
     log.info(f'Web interface started at http://{host}:{port}')
+    return thread
+
+
+def stop(thread: threading.Thread | None, timeout: float = 5.0) -> None:
+    '''Ask NiceGUI/uvicorn to shut down gracefully and wait for the thread.
+
+    Without this, Ctrl+C kills the daemon thread mid-flight and the listening
+    socket is torn down abruptly, leaving the port in TIME_WAIT for ~60s.
+    `app.shutdown()` (with reload=False) sets uvicorn's `should_exit` flag, which
+    closes the listening socket cleanly so the port is released immediately.
+    '''
+    if thread is None or not thread.is_alive():
+        return
+    try:
+        nicegui_app.shutdown()
+    except Exception:
+        # Server may not have finished starting; nothing graceful we can do.
+        log.debug('Web server shutdown signal failed', exc_info=True)
+        return
+    thread.join(timeout=timeout)
+    if thread.is_alive():
+        log.warning(f'Web server did not stop within {timeout:.1f}s')
+    else:
+        log.info('Web interface stopped')

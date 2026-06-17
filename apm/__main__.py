@@ -20,21 +20,21 @@ Hardware:
     - Arduino for controlling the ESC and servos via PWM, controlled by ZED Box via Ethernet
 
 Main control loop:
-    1. Wait for start signal from user (e.g. via button press or local web app)
-       Allow user to configure parameters during this phase.
+    1. User configures parameters -> selects a program mode -> presses start (via Web UI or CLI)
 
-    2. Initialize hardware and software components needed for the selected mode
+    2. Initialize hardware Drivers needed for the selected mode, then run the mode loop logic.
 
-    3. Run main control loop:
-        a. Capture images from front and back cameras (free-running camera threads)
+    3. Mode logic example ("normal"):
+        a. Capture images from front and back cameras (in dedicated threads owned by camera drivers)
         b. Process images to detect lane and runner position
         c. Calculate desired speed and steering angle based on lane and runner position
         d. Send control signals to ESC and servos
         e. Follow pace profile as long as runner is within certain distance or...
         f. Maintain distance if lagging behind until runner is back within pace profile
 
-    4. Stop when user sends stop signal or if an error occurs
-       If stopped due to error, wait for user to reset 
+    4. Stop when user presses stop, completes the run, or if an error occurs
+           
+    ↳  Rinse and repeat. Have fun!
 
 '''
 
@@ -47,7 +47,7 @@ from pathlib import Path
 
 from apm import config_handler
 from apm.orchestrator import Orchestrator
-from apm.webapp.app import start as start_webapp
+from apm.webapp.app import start as start_webapp, stop as stop_webapp
 
 _LOG_DIR = Path(__file__).resolve().parent.parent / 'logs'
 
@@ -103,6 +103,11 @@ def _check_port_free(host: str, port: int) -> bool:
     message instead of a raw bind traceback from the web server thread."""
     probe_host = '0.0.0.0' if host in ('', '0.0.0.0') else host
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        # Match uvicorn, which sets SO_REUSEADDR on its real listening socket.
+        # Without this the probe is stricter than the server: a freshly closed
+        # port lingering in TIME_WAIT would fail to bind here and produce a false
+        # "already in use" even though the server itself could bind fine.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             sock.bind((probe_host, port))
             return True
@@ -121,17 +126,22 @@ def main() -> None:
 
     if not _check_port_free(host, port):
         logging.error(f'Web UI port {host}:{port} is already in use - is another APM instance running? '
-                      f'Stop it (or pass --port) and try again.')
+                      f'Stop it and try again, or use a different port by using --port <port>.')
         sys.exit(1)
 
     # The Orchestrator manages the main control loop, modes, and hardware communication
     orchestrator = Orchestrator()
 
     # The web app runs in a separate thread and allows the user to start/stop, select modes, and adjust config params
-    start_webapp(orchestrator, host=host, port=port)
+    server_thread = start_webapp(orchestrator, host=host, port=port)
 
     # Point of no return. Time to start the main loop and run the APM!
-    orchestrator.run()
+    try:
+        orchestrator.run()
+    except KeyboardInterrupt:
+        logging.info('Ctrl+C received - shutting down...')
+    finally:
+        stop_webapp(server_thread)
 
 
 if __name__ == '__main__':
