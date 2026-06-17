@@ -21,11 +21,55 @@ from apm.telemetry import TelemetryLogger
 from apm.vision.lane_detector import LaneDetector
 from apm.vision.frame_encoder import encode_lane_keeping_jpeg
 
+from apm.vision.lane_detector import LaneLines
+
 log = logging.getLogger(__name__)
 
 _LOG_INTERVAL      = 1.0   # Periodic lane-line status log [s]
 _STABILITY_WINDOW  = 30    # Number of frames to include in jumpiness stats
 _STABILITY_INTERVAL = 10.0 # How often to log jumpiness stats [s]
+
+
+def _lane_telemetry_row(lanes: LaneLines | None) -> dict:
+    '''Build a flat telemetry row describing the current lane detection.
+
+    Always returns the same keys (stable CSV header) whether or not lanes were
+    found. The geometric getters can raise when the lines are parallel or
+    near-horizontal, so each derived value is guarded and left as None on failure.
+    '''
+    row = {
+        'lanes':           lanes is not None,
+        'left_slope':      None,
+        'left_intercept':  None,
+        'right_slope':     None,
+        'right_intercept': None,
+        'vanishing_x':     None,
+        'vanishing_y':     None,
+        'x_center':        None,
+        'heading':         None,
+    }
+    if lanes is None:
+        return row
+
+    row['left_slope']      = round(lanes.left_slope, 4)
+    row['left_intercept']  = round(lanes.left_intercept, 2)
+    row['right_slope']     = round(lanes.right_slope, 4)
+    row['right_intercept'] = round(lanes.right_intercept, 2)
+    try:
+        vx, vy = lanes.get_vanishing_point()
+        row['vanishing_x'] = round(vx, 2)
+        row['vanishing_y'] = round(vy, 2)
+    except ValueError:
+        pass
+    try:
+        row['x_center'] = round(lanes.get_lane_center_at_bottom(), 2)
+    except ValueError:
+        pass
+    try:
+        row['heading'] = round(lanes.get_heading(), 3)
+    except ValueError:
+        pass
+    return row
 
 
 def camera_test_front(
@@ -82,6 +126,11 @@ def camera_test_front(
                     # Rolling slope history (only when both lines are found)
                     if lanes is not None:
                         slope_history.append((lanes.left_slope, lanes.right_slope))
+
+                    # Per-frame lane detection telemetry, aligned on t_mono with the driver's
+                    # 'camera_front' timing stream so detection quality can be correlated with
+                    # frame rate / drops offline.
+                    tlm.log('lane_front', _lane_telemetry_row(lanes))
 
                     # Periodic status + achieved-FPS log. FPS is measured from the driver's
                     # frame counter (true grab rate), not this loop's poll rate.
