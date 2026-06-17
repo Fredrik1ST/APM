@@ -120,11 +120,12 @@ class SpeedModelCalibrator:
         return factor, neutral_pwm
 
 
-    def plot(self, save_path: str | Path | None = None) -> None:
+    def plot(self, save_path: str | Path | None = None, show: bool = True) -> None:
         '''
         Plot PWM (x) vs. speed (y) for all samples, with the fitted linear model overlaid.
 
         Pass save_path to write the figure to disk instead of (or as well as) showing it.
+        Pass show=False to skip the (blocking) interactive window.
         '''
         if not self.samples:
             log.warning('No samples to plot.')
@@ -161,4 +162,7 @@ class SpeedModelCalibrator:
             fig.savefig(save_path, dpi=150)
             log.info(f'Plot saved to {save_path}')
 
-        plt.show()
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)

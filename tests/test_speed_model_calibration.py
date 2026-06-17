@@ -41,4 +41,4 @@ def test_fit_affine(calibrator):
 
 
 def test_plot(calibrator, plot):
-    calibrator.plot(save_path=None if plot else 'tests/output/calibration.pdf')
+    calibrator.plot(save_path=None if plot else 'tests/output/calibration.pdf', show=plot)
