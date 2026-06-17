@@ -5,7 +5,7 @@ import numpy as np
 from apm.drivers.camera import CameraSnapshot
 from apm.vision.lane_detector import LaneLines
 
-def encode_jpeg(image: np.ndarray, quality: int = 80, scale: float = 1.0, display: bool = False) -> bytes:
+def encode_jpeg(image: np.ndarray, quality: int = 80, scale: float = 1.0) -> bytes:
     '''Convert a BGRA image to JPEG bytes with specified quality and scale.'''
     bgr = image[:, :, :3]  # Drop alpha channel (BGRA -> BGR) for OpenCV
     if scale != 1.0:
@@ -13,8 +13,6 @@ def encode_jpeg(image: np.ndarray, quality: int = 80, scale: float = 1.0, displa
     ok, buf = cv2.imencode('.jpg', bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
     if not ok:
         raise RuntimeError('JPEG encode failed')
-    if display:
-        cv2.imshow('Encoded JPEG', buf)
     return buf.tobytes()
 
 

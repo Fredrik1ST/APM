@@ -63,9 +63,6 @@ def camera_test_back(camera: CameraDriver, stop_event: threading.Event,
                         last_log_time = now
                         last_fps_seq = camera.frame_seq
 
-                    if show_window:
-                        cv2.imshow('Back Camera', snap.image)
-
                 stop_event.wait(1 / camera.fps) # Sleep until next frame is expected or stop event is set
         finally:
             camera.set_telemetry(None)
