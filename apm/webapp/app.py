@@ -244,7 +244,7 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
         def _camera_card(label: str, src: str):
             with ui.card().classes('col-span-1'):
                 ui.label(label).classes('text-lg font-semibold mb-2')
-                img = ui.image(src).classes('w-full rounded')
+                img = ui.image(src).classes('w-full rounded').props('no-transition')
                 placeholder = (
                     ui.element('div')
                     .classes('w-full rounded flex items-center justify-center bg-gray-800 text-gray-500 text-sm')
