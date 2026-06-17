@@ -9,9 +9,10 @@ import logging
 import threading
 import datetime
 from pathlib import Path
-from enum import IntEnum
 
 from apm import config_handler as config
+# Re-exported here for backwards compatibility (e.g. `from apm.orchestrator import State, Mode`).
+from apm.states import State, Mode
 
 # ---- Drivers: Responsible for interfacing with asynchronous data sources (cameras, GNSS, Arduino) ----
 from apm.drivers.arduino import ArduinoDriver
@@ -24,32 +25,6 @@ from apm import modes
 log = logging.getLogger(__name__)
 RECORDINGS_DIR = Path(__file__).resolve().parent.parent / "logs" / "recordings"
 
-
-class State(IntEnum):
-    IDLE = 0
-    CONFIG = 10
-    STARTING = 20
-    RUNNING = 21
-    RUNNING_PACE = 22
-    RUNNING_DIST = 23
-    RUNNING_CONST = 24
-    STOPPING = 30
-    FINISHED = 31
-    ERROR = 60
-
-class Mode(IntEnum):
-    NONE = 0
-    NORMAL = 1
-    PACE_ONLY = 2
-    DISTANCE_ONLY = 3
-    CONSTANT_SPEED = 4
-    CONSTANT_SPEED_CLOSED = 5
-    CAMERA_TEST = 100
-    CAMERA_TEST_FRONT = 101
-    CAMERA_TEST_BACK = 102
-    ARDUINO_TEST = 200
-    GNSS_TEST = 300
-    LANE_KEEPER_TEST = 400
 
 class Orchestrator:
     """
@@ -206,7 +181,8 @@ class Orchestrator:
         try:
             self.state = State.RUNNING
             modes.normal(self.arduino, self.gnss, self.front_camera, self.back_camera,
-                         self._stop_event, self.cfg)
+                         self._stop_event, self.cfg,
+                         set_state=lambda s: setattr(self, 'state', s))
         finally:
             self.state = State.STOPPING
             self.arduino.stop()
@@ -228,7 +204,7 @@ class Orchestrator:
         self.back_camera.start(**self._camera_kwargs(name='back'))
         self.arduino.start(**self._arduino_kwargs())
         try:
-            self.state = State.RUNNING
+            self.state = State.RUNNING_PACE
             modes.pace_only(self.arduino, self.gnss, self.front_camera, self.back_camera,
                             self._stop_event, self.cfg)
         finally:
@@ -246,6 +222,7 @@ class Orchestrator:
         arduino_kwargs = self._arduino_kwargs()
         self.arduino.start(**arduino_kwargs)
         try:
+            self.state = State.RUNNING_DIST
             modes.distance_only(self.back_camera, self.arduino, self._stop_event, self.cfg)
         finally:
             self.state = State.STOPPING
@@ -259,6 +236,7 @@ class Orchestrator:
         self.front_camera.start(**self._camera_kwargs(name='front'))
         self.back_camera.start(**self._camera_kwargs(name='back'))
         try:
+            self.state = State.RUNNING
             modes.camera_test(self.front_camera, self.back_camera, self._stop_event,
                               lambda img: setattr(self, 'front_image', img), self.cfg)
         finally:
@@ -272,6 +250,7 @@ class Orchestrator:
         kwargs = self._camera_kwargs(name='front')
         self.front_camera.start(**kwargs)
         try:
+            self.state = State.RUNNING
             modes.camera_test_front(self.front_camera, self._stop_event,
                                         lambda img: setattr(self, 'front_image', img), self.cfg)
         finally:
@@ -284,6 +263,7 @@ class Orchestrator:
         kwargs = self._camera_kwargs(name='back')
         self.back_camera.start(**kwargs)
         try:
+            self.state = State.RUNNING
             modes.camera_test_back(self.back_camera, self._stop_event, self.cfg)
         finally:
             self.state = State.STOPPING
@@ -297,6 +277,7 @@ class Orchestrator:
             log.error('GNSS failed to start - aborting test.')
             return
         try:
+            self.state = State.RUNNING
             modes.gnss_test(self.gnss, self._stop_event, self.cfg)
         finally:
             self.state = State.STOPPING
@@ -308,6 +289,7 @@ class Orchestrator:
         kwargs = self._arduino_kwargs()
         self.arduino.start(**kwargs)
         try:
+            self.state = State.RUNNING
             modes.arduino_test(self.arduino, self._stop_event, self.cfg)
         finally:
             self.state = State.STOPPING
@@ -324,6 +306,7 @@ class Orchestrator:
         if not gnss_ok:
             log.warning('GNSS unavailable - running constant speed without speed measurement.')
         try:
+            self.state = State.RUNNING_CONST
             modes.constant_speed(self.arduino, self._stop_event, self.cfg,
                                  gnss=self.gnss if gnss_ok else None)
         finally:
@@ -342,6 +325,7 @@ class Orchestrator:
             return
         self.arduino.start(**self._arduino_kwargs())
         try:
+            self.state = State.RUNNING_CONST
             modes.constant_speed_closed(self.arduino, self.gnss, self._stop_event, self.cfg)
         finally:
             self.state = State.STOPPING
@@ -355,6 +339,7 @@ class Orchestrator:
         arduino_kwargs = self._arduino_kwargs()
         self.arduino.start(**arduino_kwargs)
         try:
+            self.state = State.RUNNING
             modes.lane_keeper_test(self.front_camera, self.arduino, self._stop_event, self.cfg, self.front_image)
         finally:
             self.state = State.STOPPING

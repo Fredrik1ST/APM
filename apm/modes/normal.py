@@ -37,10 +37,12 @@ import time
 import logging
 import threading
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import tomlkit
 import numpy as np
+
+from apm.states import State
 
 from apm.drivers.arduino import ArduinoDriver, MessageCommands, blink
 from apm.drivers.camera import CameraDriver
@@ -83,8 +85,17 @@ def _make_pid(cfg_pid) -> PIDController:
 
 def normal(arduino: ArduinoDriver, gnss: "GNSSDriver",
            front_camera: CameraDriver, back_camera: CameraDriver,
-           stop_event: threading.Event, cfg: tomlkit.TOMLDocument) -> None:
-    '''Normal mode: lane keeping + pace-following with cruise <-> distance switching.'''
+           stop_event: threading.Event, cfg: tomlkit.TOMLDocument,
+           set_state: Callable[[State], None] | None = None) -> None:
+    '''Normal mode: lane keeping + pace-following with cruise <-> distance switching.
+
+    `set_state`, if given, is called with `State.RUNNING_PACE` while cruise control is active
+    and `State.RUNNING_DIST` while distance control is, so the UI shows which controller is
+    currently driving.'''
+
+    def _report_state(active: "_Active") -> None:
+        if set_state is not None:
+            set_state(State.RUNNING_PACE if active is _Active.CRUISE else State.RUNNING_DIST)
 
     # How close the runner needs to reach the pacing profile to switch back from distance -> cruise control
     catchup_tolerance = float(cfg['cruise_control']['catchup_tolerance_m'])
@@ -150,6 +161,7 @@ def normal(arduino: ArduinoDriver, gnss: "GNSSDriver",
 
     cruise.reset(0.0)
     active = _Active.CRUISE
+    _report_state(active)
     switch_since: float | None = None   # when the pending speed-mode switch condition first became true
     measured = 0.0                      # latest valid GNSS ground speed (held through fix gaps)
     last_distance = -1.0                # latest valid runner distance (for bridging dropouts)
@@ -234,6 +246,7 @@ def normal(arduino: ArduinoDriver, gnss: "GNSSDriver",
                             # (now ~0) schedule deficit so the outer loop nulls the residual.
                             cruise.reset(measured, keep_schedule=True)
                             log.info(f'Runner back on schedule ({cruise.schedule_error:.1f} m deficit) -> cruise control')
+                        _report_state(active)
                         switch_since = None
                 else:
                     switch_since = None

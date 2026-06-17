@@ -63,7 +63,7 @@ MODE_LABELS: dict[Mode, str] = {
     Mode.NORMAL:            'Normal (pace + distance)',
     Mode.PACE_ONLY:         'Pace only',
     Mode.DISTANCE_ONLY:     'Distance only',
-    Mode.CONSTANT_SPEED:    'Constant speed',
+    Mode.CONSTANT_SPEED:    'Constant speed (open loop)',
     Mode.CONSTANT_SPEED_CLOSED: 'Constant speed (closed loop)',
     Mode.CAMERA_TEST:       'Camera test (both)',
     Mode.CAMERA_TEST_FRONT: 'Camera test (front)',
