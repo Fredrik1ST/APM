@@ -175,6 +175,10 @@ def _register_page(orchestrator: Orchestrator, log_handler: _LastLogHandler) -> 
                 if run_notes_enabled:
                     note_input = ui.textarea(label='Run note (optional)').classes('w-full mt-2')
                     note_input.props('dense outlined autogrow')
+                    # Persist the note server-side so a websocket reconnect/page rebuild
+                    # (e.g. when camera startup briefly stalls the event loop) doesn't
+                    # wipe what the user typed. Cleared explicitly on Stop below.
+                    note_input.bind_value(nicegui_app.storage.user, 'run_note')
 
                 def toggle_start_stop() -> None:
                     if orchestrator.state in _ACTIVE_STATES:
@@ -436,7 +440,15 @@ def start(orchestrator: Orchestrator, host: str = '0.0.0.0', port: int = 8080) -
     thread = threading.Thread(
         target=ui.run,
         kwargs=dict(host=host, port=port, title='APM Control',
-                    dark=True, reload=False, show=False),
+                    dark=True, reload=False, show=False,
+                    # The web server shares the process with the control loop, so heavy
+                    # camera startup (loading the depth model) can briefly stall the event
+                    # loop. A generous reconnect window lets the browser reattach to its
+                    # existing client state instead of rebuilding the page from scratch.
+                    reconnect_timeout=30.0,
+                    # Required for app.storage.user (used to persist the run note across
+                    # reconnects). Local LAN control app, so a fixed secret is fine.
+                    storage_secret='apm-webui'),
         daemon=True,
         name='nicegui',
     )
