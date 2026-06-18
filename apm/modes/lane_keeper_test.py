@@ -152,16 +152,21 @@ def lane_keeper_test(
                         )
                         last_stability_log = now
 
-                    # Encode and publish the annotated frame
+                    # Encode and publish the annotated frame. Beyond the lane lines /
+                    # mask drawn by the camera tests, also overlay the controller's
+                    # commanded steering (and the measured heading when lanes are seen)
+                    # so steering tuning can be eyeballed live in the web UI.
                     jpg = encode_lane_keeping_jpeg(
                         img_resized,
                         lane_lines=lanes,
+                        steering_angle=steering,
+                        heading_angle=lane_keeper.last_heading if lanes is not None else None,
                         mask_polygons=detector.mask_polygons,
                     )
                     if set_front_image is not None:
                         set_front_image(jpg)
 
-                stop_event.wait(1 / _TICK)
+                stop_event.wait(_TICK)
         finally:
             # Safe stop on exit
             arduino.write_msg(MessageCommands(run=False, steer_angle=90.0))

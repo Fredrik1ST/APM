@@ -118,7 +118,7 @@ def distance_only(
                             log.info('No runner detected')
                         last_log_time = now
 
-                stop_event.wait(1 / _TICK)
+                stop_event.wait(_TICK)
         finally:
             arduino.write_msg(MessageCommands(run=False))
 
