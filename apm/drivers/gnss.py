@@ -62,7 +62,7 @@ class GNSSDriver:
     def __init__(self):
 
         self.is_initialized = False
-        self.ok = False # True if GNSS data is being successfully received
+        self.ok = False # True if GNSS data is being successfully received - shadows the above bool
         self.measurement_rate_hz: int
         self.speed_threshold: float
         self.snapshot: GNSSSnapshot | None = None
@@ -111,6 +111,7 @@ class GNSSDriver:
         log.info("GNSS fix found")
         with self._is_initialized_mtx:
             self.is_initialized = True
+            self.ok = True
         return True
 
 
@@ -306,4 +307,5 @@ class GNSSDriver:
             if self._grabber_thread.is_alive():
                 log.warning("GNSS thread did not stop cleanly within timeout")
         self.is_initialized = False
+        self.ok = False
         
