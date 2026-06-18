@@ -27,14 +27,31 @@ class LaneKeeper:
       - angle_pid:    corrects for the heading angle toward the lane's vanishing point.
       - position_pid: corrects for lateral offset from the lane center at the bottom of the frame.
 
-    Angle convention: 
-        atan2(vanishing_y - image_bottom, vanishing_x - image_center_x).
-        When heading straight the vanishing point is directly above, giving -90°.
-        Raw steering output is offset by +90 so the final value is in [0°, 180°],
-        where 0° = Right, 90° = Straight, 180° = Left
+    Two different angle scales are involved here; do not confuse them:
+
+    1. HEADING scale (input, from LaneLines.get_heading()):
+         atan2(vanishing_y - image_bottom, vanishing_x - image_center_x), so it is
+         centred on -90° (vanishing point straight above), NOT on 0°.
+           -90°            = aligned straight ahead   (STRAIGHT_HEADING)
+           toward   0°     = vanishing point is to the RIGHT of centre
+           toward -180°    = vanishing point is to the LEFT  of centre
+
+    2. STEERING scale (output, the Arduino servo command):
+         The PID corrections are computed around 0° (their natural error scale) and
+         then offset by +90 to land on the Arduino's [0°, 180°] servo scale:
+           90°             = straight
+           < 90° (toward 0)   = steer RIGHT   (servo limit max_right = 45°)
+           > 90° (toward 180) = steer LEFT    (servo limit max_left  = 135°)
+         This matches [arduino.steer_angle] in config/settings.toml.
+
+    Sign/feedback check: if the lane bends right, the vanishing point moves right,
+    heading rises from -90° toward 0°, the (positive-kp) angle PID drives the output
+    below 90°, i.e. steer right to follow the lane -- negative feedback, as required.
     """
 
-    STRAIGHT_HEADING = -90.0  # atan2 heading (degrees) when the APM is aligned straight
+    # Heading (scale 1 above) the angle PID drives toward, i.e. the heading value
+    # that corresponds to driving straight. Not 0° -- see the class docstring.
+    STRAIGHT_HEADING = -90.0
 
     def __init__(self, angle_pid: PIDController, position_pid: PIDController):
         self.angle_pid = angle_pid
@@ -58,7 +75,8 @@ class LaneKeeper:
             image_height: Height of the source image in pixels.
 
         Returns:
-            Steering angle in degrees where 90° = straight, <90° = left, >90° = right.
+            Steering angle on the Arduino servo scale (see class docstring): 90° = straight,
+            <90° = right, >90° = left. Caller clamps this to the configured servo limits.
         """
 
         image_center = lane_lines.image_width / 2
@@ -73,6 +91,8 @@ class LaneKeeper:
             setpoint=image_center, current_value = x_center
         )
 
+        # Both corrections are errors centred on 0 (heading vs -90°, x_center vs image
+        # centre). The +90 shifts them onto the Arduino servo scale where 90° = straight.
         steering = angle_correction + position_correction + 90.0
         logger.debug("heading=%.1f°  x_center=%.1f  angle_corr=%.2f  pos_corr=%.2f  steering=%.1f°",
                      heading, x_center, angle_correction, position_correction, steering)

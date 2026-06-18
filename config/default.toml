@@ -67,7 +67,7 @@ coefficients = [20.23, 1540] # Coefficients for polynomial speed model (starting
 [lane_keeping]
 cut_top = 0.571             # fraction of image height to crop (4/7)
 angle_threshold = 50        # [degrees]
-angle_setpoint = 90         # starting angle [deg] (0 = left, 90 = straight, 180 = right)
+angle_setpoint = 90         # starting angle [deg] (0 = right, 90 = straight, 180 = left; see [arduino.steer_angle])
 position_setpoint = 363     # pixels
 set_width = 640             # pixels
 show_lines = false          # Draw lane lines on the video stream (for display / debugging)

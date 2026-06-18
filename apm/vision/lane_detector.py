@@ -63,10 +63,14 @@ class LaneLines:
 
     def get_heading(self) -> float:
         """Calculate the heading angle toward the lane's vanishing point.
-        
-        Angle convention:
+
+        Angle convention (centred on -90°, NOT 0° -- because image y grows downward):
             :code:`atan2(vanishing_y - image_bottom, vanishing_x - image_center_x)`.
-            When heading straight the vanishing point is directly above, giving -90°."""
+            -90°         = vanishing point straight above  -> aligned straight ahead
+            toward   0°  = vanishing point to the RIGHT of centre
+            toward -180° = vanishing point to the LEFT  of centre
+        This is the input scale for LaneKeeper; it is distinct from the steering output
+        scale (0=right, 90=straight, 180=left). See LaneKeeper for the full pipeline."""
         vanishing_x, vanishing_y = self.get_vanishing_point()
         heading = math.degrees(
             math.atan2(vanishing_y - self.image_height, vanishing_x - self.image_width / 2)
