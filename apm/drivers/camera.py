@@ -145,7 +145,7 @@ class CameraDriver:
         init_params.camera_fps = self.fps
         init_params.coordinate_units = self.coord_units
         init_params.coordinate_system = self.coord_system
-        init_params.depth_mode = sl.DEPTH_MODE.NEURAL_LIGHT if (self.depth_enabled or self.body_tracking_enabled) else sl.DEPTH_MODE.NONE
+        init_params.depth_mode = sl.DEPTH_MODE.PERFORMANCE if (self.depth_enabled or self.body_tracking_enabled) else sl.DEPTH_MODE.NONE
         camera = sl.Camera()
 
         errCode = camera.open(init_params)

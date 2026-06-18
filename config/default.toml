@@ -12,7 +12,7 @@ record = false              # Save SVO video recordings to disk (at logs/recordi
 display = false             # Convert frames to JPEG and stream to web app
 
 [camera.front.depth]
-enable = false              # Enable depth perception
+enable = false              # Grab depth map (body tracking also activates depth, but saves CPU by not grabbing)
 
 [camera.front.body_tracking]
 enable = false
@@ -28,7 +28,7 @@ record = false              # Save SVO video recordings to disk (at logs/recordi
 display = false             # Convert frames to JPEG and stream to web app
 
 [camera.back.depth]
-enable = true              # Enable depth perception
+enable = false              # Grab depth map (body tracking also activates depth, but saves CPU by not grabbing)
 
 [camera.back.body_tracking]
 enable = true
