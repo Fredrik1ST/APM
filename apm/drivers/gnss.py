@@ -83,6 +83,7 @@ class GNSSDriver:
 
 
     def start(self, measurement_rate_hz: int = 10, speed_threshold: float = 0.07):
+        self.speed_threshold = speed_threshold
         try:
             self._client = GPSDClient(host="127.0.0.1")
         except Exception:

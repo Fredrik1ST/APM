@@ -378,7 +378,8 @@ class Orchestrator:
         """Convert the GNSS config to keyword arguments for the GNSSDriver.start() method"""
         gnss_cfg = self.cfg['gnss']
         return {
-            'measurement_rate_hz': gnss_cfg['measurement_rate']
+            'measurement_rate_hz': gnss_cfg['measurement_rate'],
+            'speed_threshold': gnss_cfg['speed_threshold'],
         }
 
     def _arduino_kwargs(self) -> dict:
