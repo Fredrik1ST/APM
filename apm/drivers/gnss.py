@@ -124,7 +124,7 @@ class GNSSDriver:
 
         log.info(f'Setting GNSS polling rate to {rate_hz} Hz')
         try:
-            result = subprocess.run(['ubxtool', '-p', 'CFG-RATE,', str(rate_ms)], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(['ubxtool', '-p', f'CFG-RATE,{rate_ms}'], capture_output=True, text=True, timeout=5)
             log.debug(f'ubxtool response: {result.stdout}')
         except subprocess.TimeoutExpired:
             log.error("Timeout while setting GNSS polling rate")
