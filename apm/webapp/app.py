@@ -128,10 +128,11 @@ def _build_config_editor() -> tuple[dict, list]:
         for key, value in node.items():
             keys = parent_keys + [key]
             if isinstance(value, dict):
-                ui.label(' > '.join(keys)).classes(
-                    'text-xs text-gray-400 mt-4 mb-1 font-mono uppercase tracking-wider'
-                )
-                render_section(keys, value)
+                with ui.expansion(key).classes('w-full').props(
+                    'dense header-class="text-xs text-gray-400 '
+                    'font-mono uppercase tracking-wider"'
+                ):
+                    render_section(keys, value)
             else:
                 with ui.row().classes('items-start gap-3 w-full'):
                     ui.label(key).classes('text-sm w-40 shrink-0 font-mono break-all')
