@@ -12,7 +12,7 @@ import time
 import logging
 import threading
 from collections import deque
-from typing import Callable
+from typing import Callable, Optional
 
 from tomlkit import TOMLDocument
 import numpy as np
@@ -38,7 +38,7 @@ def lane_keeper_test(
     arduino: ArduinoDriver,
     stop_event: threading.Event,
     cfg: TOMLDocument,
-    set_front_image: Callable[[bytes], None],
+    set_front_image: Optional[Callable[[bytes], None]],
 ) -> None:
 
     # Read lane detector parameters from config
@@ -158,7 +158,8 @@ def lane_keeper_test(
                         lane_lines=lanes,
                         mask_polygons=detector.mask_polygons,
                     )
-                    set_front_image(jpg)
+                    if set_front_image is not None:
+                        set_front_image(jpg)
 
                 stop_event.wait(1 / _TICK)
         finally:

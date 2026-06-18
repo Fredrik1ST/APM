@@ -339,7 +339,8 @@ class Orchestrator:
         self.arduino.start(**arduino_kwargs)
         try:
             self.state = State.RUNNING
-            modes.lane_keeper_test(self.front_camera, self.arduino, self._stop_event, self.cfg, self.front_image)
+            modes.lane_keeper_test(self.front_camera, self.arduino, self._stop_event, self.cfg,
+                                   lambda img: setattr(self, 'front_image', img))
         finally:
             self.state = State.STOPPING
             self.front_camera.stop()
